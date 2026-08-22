@@ -1,94 +1,221 @@
 # Model Index
 
-本地运行的 AI 模型资料库。前端页面、本地 API、数据同步和 SQLite 数据库均位于同一个 Next.js 项目中。
+A local-first AI model catalog and evaluation workbench for product managers, researchers, and engineering teams.
 
-## 已实现
+Model Index combines model metadata, official API pricing, lifecycle information, source evidence, filtering, comparison, and lightweight model testing in one Next.js application. The application and its SQLite database run locally; no hosted backend is required.
 
-- Models.dev 中美底层模型资料同步
-- 中美厂商官方 API 价格，人民币价格直接采用中国官网原价
-- 千问模型广场 486 条在售模型记录，覆盖千问、万相、百聆及平台接入的第三方模型
-- 火山方舟 54 个模型卡片，用于补充豆包及平台接入模型的身份与模态
-- 模型开发商与服务平台分开保存；阿里云、火山方舟中的第三方模型不会被归到平台自研模型下
-- MiniMax H3、MiniMax M3 等官网核验的新模型补录
-- OpenRouter 可用性与中转价格同步，不在主模型库中混作官方价格
-- Token、秒、张、次、万字符、音色等多种实际计费单位
-- 底层模型与服务价格分层存储，主界面以底层模型为中心
-- 精确匹配、规则匹配、人工确认和待归并状态
-- 搜索、中英双语模型分类、开源/闭源/待核验、多维下拉筛选、排序、分页和 CSV 导出；筛选菜单支持点击外部或 Esc 收起
-- 浏览器本地保存筛选视图
-- 模型详情、官方计费明细、规格和来源证据
-- 页面内一键同步
-- “立即同步”会读取 Models.dev、OpenRouter、千问模型市场、火山方舟，以及 MiniMax、DeepSeek、Kimi、智谱官网实时价格
-- 新增模型按发布时间从新到旧置顶；改价与上下文等规格会更新，并保留价格历史；下架记录不会删除，而是标记为不可调用
+> The current product interface is in Simplified Chinese. This README is maintained in English.
 
-## 本地启动
+## Why this project exists
+
+Choosing an AI model usually requires checking several unrelated sources: vendor documentation, model marketplaces, pricing pages, routing platforms, and open-weight repositories. Those sources also describe different concepts. A base model, a versioned snapshot, and a provider offering are often incorrectly treated as the same thing.
+
+Model Index keeps them separate and makes the data traceable:
+
+- **Model**: the underlying model identity, developer, family, release date, modalities, context window, openness, and capabilities.
+- **Offering**: a callable API product with a provider-specific model ID, currency, billing unit, price, availability, region, and source URL.
+- **Evidence**: the official page or repository used to verify a field, together with the verification time.
+
+## Highlights
+
+- Local Next.js application with a local SQLite database
+- Search, sorting, pagination, CSV export, and multi-dimensional filters
+- Chinese and English model-type labels such as LLM, VLM, Embedding, Rerank, ASR, TTS, and OCR
+- Separate developer and platform identities, preventing third-party marketplace models from being attributed to the marketplace owner
+- Explicit open-weight and closed-weight classification with source evidence
+- Model lifecycle tracking for current, superseded, preview, and retired models
+- New models sorted by release date, newest first
+- Pricing support for tokens, requests, images, seconds, characters, voices, pixels, and other vendor-defined units
+- CNY prices taken directly from Chinese vendor pages, never converted from USD
+- Missing prices shown as **Unknown**, not **Free**
+- Official price history and sync-change summaries
+- Select models from the catalog and send them to a comparison workbench
+- Encrypted local API-key storage for the workbench
+
+## Data policy
+
+The catalog currently focuses on models developed in China and the United States and on public API invocation pricing.
+
+The following rules are enforced:
+
+1. Chinese vendor prices must come from Chinese official pages and remain in CNY.
+2. US vendor prices remain in USD.
+3. Exchange-rate conversion is not used as a substitute for a local official price.
+4. A missing price is `unknown`; it is only marked `free` when the source explicitly says it is free.
+5. Vendor APIs take priority over marketplaces and routing platforms.
+6. OpenRouter and major model platforms are treated as provider offerings, not model developers.
+7. Old or rarely used retrieval models are excluded when a clearly better current replacement exists.
+
+## Data sources
+
+| Source | Purpose |
+| --- | --- |
+| [Models.dev](https://models.dev) | Base model metadata and US official API offerings |
+| [OpenRouter](https://openrouter.ai/models) | Current routing availability and intermediary pricing |
+| [Qianwen Model Market](https://www.qianwenai.com/models) | Model identity, developer attribution, modality, and availability checks |
+| [Volcengine Ark](https://ark.volcengine.com/region:cn-beijing/model?view=CARD_VIEW&preset=ModelGroups) | Model identity, vendor attribution, modality, context, and official Volcengine pricing |
+| [Alibaba Cloud Model Studio](https://help.aliyun.com/zh/model-studio/model-pricing) | Mainland China API prices and specifications for Qwen, Wan, Bailian, and other Alibaba model families |
+| [MiniMax](https://platform.minimaxi.com/docs/guides/pricing-paygo) | Live Mainland China API pricing |
+| [DeepSeek](https://api-docs.deepseek.com/zh-cn/quick_start/pricing) | Live Mainland China API pricing, including peak and off-peak tiers |
+| [Kimi](https://platform.kimi.com/docs/pricing/chat) | Live Mainland China API pricing |
+| [Zhipu AI](https://open.bigmodel.cn/pricing) | Live Mainland China API pricing, including Embedding and managed Rerank products |
+| OpenAI, Google, xAI, Voyage AI, and AWS documentation | Live US vendor pricing for supported media and retrieval models |
+| Official Hugging Face organizations | Open-weight repository evidence |
+
+Every source remains subject to its own license and terms of service. This repository does not grant redistribution rights for third-party data.
+
+## Getting started
+
+### Requirements
+
+- Node.js 20 or later
+- npm
+- Internet access for the initial sync and future updates
+
+### Install and run
 
 ```bash
 npm install
 npm run dev
 ```
 
-打开 [http://localhost:3000](http://localhost:3000)。
+Open [http://localhost:3000](http://localhost:3000).
 
-## 数据同步
+The catalog remains searchable offline after data has been synchronized. A network connection is only required when refreshing sources or calling model APIs from the workbench.
 
-命令行手动同步：
+## Commands
 
 ```bash
+# Start the development server
+npm run dev
+
+# Synchronize all configured sources
 npm run catalog:sync
-```
 
-查看当前数据统计：
-
-```bash
+# Print catalog statistics
 npm run catalog:stats
+
+# Audit deduplication, openness, recency, context, and price coverage
+npm run catalog:audit
+
+# Run static checks
+npm run lint
+
+# Create a production build
+npm run build
 ```
 
-也可以在页面右上角点击“立即同步”。同步需要联网，已有数据的查询和筛选不需要联网。
+## What “Sync now” does
 
-### “立即同步”的具体规则
+The **Sync now** button calls the same synchronization pipeline as `npm run catalog:sync`.
 
-1. **新增模型**：读取成功的数据源出现新模型后，写入本地库并保存发布时间。页面同步完成后自动回到第 1 页、恢复为“发布时间从新到旧”，所以符合当前筛选条件的新模型会出现在最上方。
-2. **价格和规格修改**：官网公开的输入价、输出价、缓存价、阶梯价、实际计费单位、上下文和最大输出等字段发生变化时，更新当前值。每次不同的价格状态同时写入 `offering_price_history`，旧价格不会被无痕覆盖。
-3. **下架**：某个成功读取的数据源不再返回原有调用记录时，该记录会停用并保存下架日期。如果同一个底层模型仍由其他有效来源提供，只停用消失的调用记录；只有所有当前来源都不再提供时，底层模型才标记为“已下架 / 不可调用”。下架模型仍保留资料和最后一次价格，避免历史项目无法追溯。
-4. **来源失败保护**：只有数据源成功读取后才应用差异。Models.dev、OpenRouter、千问模型市场或火山方舟读取失败会让整次同步失败，旧库保持不变；MiniMax、DeepSeek、Kimi、智谱中单一官网暂时读取失败时，使用该厂商上次成功快照，不会把整批模型误判为下架。“厂商来源”面板会显示“官网实时”或“快照兜底”。
-5. **结果回执**：页面会显示本次新增、重新上架、已下架、停用调用记录、改价和规格更新的数量。数字均来自同步前后的本地数据差异，不是演示文案。
+- **New models** are inserted and appear according to their release date.
+- **Price and specification changes** update the current record and preserve price-history snapshots.
+- **Retired offerings** are deactivated instead of deleted.
+- A base model is only marked retired when no current callable offering remains.
+- **Partial vendor failures** use the most recent successful vendor snapshot so that a temporary website failure does not retire an entire model family.
+- The UI reports actual counts for new models, reactivated models, retired models, retired offerings, price changes, and specification changes.
 
-## 数据位置
+Source discovery is automatic for Models.dev, OpenRouter, Qianwen Model Market, and Volcengine Ark. Some vendor-specific parsers intentionally use an allowlist of verified model families; newly announced models from those vendors may require a parser update before they become first-class catalog records.
+
+## Evaluation workbench
+
+Models can be selected from the catalog and imported into the workbench.
+
+The text-model workflow provides:
+
+- One shared system prompt
+- One shared user input
+- One output panel per selected model
+- Per-model API model ID and API key
+- Parallel execution and latency display
+- Copy and clear actions for editable fields and outputs
+
+The interface also contains task-specific layouts for audio, image, OCR, Embedding, and Rerank evaluation. Some non-text workflows are currently UI scaffolds and will be connected to provider-specific APIs incrementally.
+
+### API-key security
+
+Workbench API keys are:
+
+- Stored only in the local SQLite database
+- Encrypted with AES-256-GCM
+- Protected by a randomly generated local key in `data/.secrets/`
+- Masked in the interface after saving
+- Excluded from Git by default
+
+This is designed for a trusted local machine. Do not expose the application directly to the public internet without adding authentication, authorization, rate limiting, and a production secret-management system.
+
+## Local data
 
 ```text
 data/
-├── catalog.db             # 结构化后的本地 SQLite 数据库
-├── official/              # 版本化的官网数据与规格
+├── catalog.db                         # Local SQLite database; ignored by Git
+├── .secrets/                          # Local encryption keys; ignored by Git
+├── official/                          # Versioned, manually verified source data
 │   ├── aliyun-model-pricing.json
 │   ├── aliyun-model-specs.json
-│   ├── openness-evidence.json
-│   └── curated-recent-models.json
-│   └── curated-retrieval-models.json
-└── raw/                   # 自动同步来源的最新原始 JSON
+│   ├── china-api-prices.json
+│   ├── curated-recent-models.json
+│   ├── curated-retrieval-models.json
+│   └── openness-evidence.json
+└── raw/                               # Latest source snapshots; ignored by Git
     ├── modelsdev-models.json
     ├── modelsdev-offerings.json
+    ├── openrouter.json
     ├── qianwen-catalog.json
     ├── volcengine-ark.json
-    ├── official-{minimax,deepseek,moonshot,zhipu}-pricing.json
-    └── openrouter.json
+    └── official-*-pricing.json
 ```
 
-`catalog.db` 和 `raw` 原始 JSON 默认不提交到 Git；`official` 中经官网核验的数据会提交到 Git。需要备份个人数据时，关闭应用后复制整个 `data` 目录即可。
+To back up the local catalog, stop the application and copy the entire `data` directory. The database, raw snapshots, and secrets are intentionally not committed.
 
-## 核心表
+## Core database tables
 
-- `canonical_models`：底层模型身份和稳定能力。
-- `model_catalog_entries`：外部模型广场的原始条目，分别保存模型开发商与服务平台。
-- `offerings`：官方 API 与 OpenRouter 的区域、价格、计费单位和来源记录。
-- `offering_price_history`：每次真实价格或上下架状态发生变化时保存的历史快照。
-- `manual_aliases`：人工确认的模型别名和归并关系。
-- `user_tags` / `model_user_tags`：与自动数据隔离的人工标签。
-- `sources` / `sync_runs`：数据源状态与同步记录。
+| Table | Purpose |
+| --- | --- |
+| `canonical_models` | Stable model identity, specifications, release data, and lifecycle |
+| `model_catalog_entries` | Raw marketplace entries with separate platform and developer identities |
+| `offerings` | Provider-specific API IDs, prices, units, regions, and availability |
+| `offering_price_history` | Historical price and availability snapshots |
+| `model_openness_evidence` | Evidence used for open/closed classification |
+| `manual_aliases` | Human-confirmed aliases and merge decisions |
+| `user_tags` / `model_user_tags` | Local user annotations, isolated from synchronized data |
+| `sources` / `sync_runs` | Source health, timestamps, counts, and sync results |
+| `workbench_credentials` | Locally encrypted provider credentials |
 
-## 开发检查
+## Project structure
+
+```text
+src/
+├── app/
+│   ├── api/                            # Catalog, sync, and workbench routes
+│   ├── globals.css
+│   └── page.tsx
+├── components/catalog/                 # Catalog and workbench UI
+└── lib/catalog/                        # Database, queries, sync, pricing, and evidence
+
+scripts/
+├── sync-catalog.ts
+├── catalog-stats.ts
+└── catalog-audit.ts
+```
+
+## Validation
+
+Before committing source or data changes, run:
 
 ```bash
 npm run lint
+npm run catalog:audit
 npm run build
 ```
+
+The catalog audit checks current-product deduplication, hidden snapshots, openness evidence, recent-model context coverage, and API-price coverage.
+
+## Known limitations
+
+- The current UI is optimized for local single-user use.
+- Vendor website parsers may require maintenance when official pages change structure.
+- Some managed retrieval products do not expose a standalone Embedding or Rerank endpoint; this is stated in their model notes.
+- Benchmark normalization and user-defined model scoring are not yet implemented.
+- Video and 3D evaluation workflows are intentionally deferred.
