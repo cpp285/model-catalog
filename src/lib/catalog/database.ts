@@ -10,6 +10,20 @@ declare global {
   var __modelCatalogDatabase: BetterSqlite3.Database | undefined;
 }
 
+function ensureColumn(
+  database: BetterSqlite3.Database,
+  table: string,
+  column: string,
+  definition: string,
+) {
+  const columns = database.prepare(`PRAGMA table_info(${table})`).all() as Array<{
+    name: string;
+  }>;
+  if (!columns.some((item) => item.name === column)) {
+    database.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
+}
+
 function createDatabase() {
   fs.mkdirSync(DATA_DIRECTORY, { recursive: true });
 
@@ -42,6 +56,7 @@ function createDatabase() {
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
       developer TEXT NOT NULL,
+      developer_country TEXT,
       family TEXT,
       description TEXT,
       release_date TEXT,
@@ -86,6 +101,14 @@ function createDatabase() {
       output_price REAL,
       cache_read_price REAL,
       cache_write_price REAL,
+      currency TEXT,
+      price_unit TEXT,
+      price_status TEXT NOT NULL DEFAULT 'unknown',
+      is_official_api INTEGER NOT NULL DEFAULT 0,
+      market TEXT,
+      price_note TEXT,
+      verified_at TEXT,
+      pricing_tiers_json TEXT NOT NULL DEFAULT '[]',
       reasoning INTEGER,
       tool_call INTEGER,
       structured_output INTEGER,
@@ -112,6 +135,21 @@ function createDatabase() {
     CREATE INDEX IF NOT EXISTS idx_offerings_match
       ON offerings(match_status, active);
 
+    CREATE TABLE IF NOT EXISTS provider_sources (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      company TEXT NOT NULL,
+      country TEXT NOT NULL,
+      developer_ids_json TEXT NOT NULL DEFAULT '[]',
+      homepage_url TEXT,
+      pricing_url TEXT,
+      api_status TEXT NOT NULL,
+      price_status TEXT NOT NULL,
+      notes TEXT,
+      verified_at TEXT,
+      updated_at TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS user_tags (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL UNIQUE,
@@ -136,6 +174,37 @@ function createDatabase() {
       PRIMARY KEY (source, source_model_id),
       FOREIGN KEY (canonical_model_id) REFERENCES canonical_models(id)
     );
+  `);
+
+  ensureColumn(database, "canonical_models", "developer_country", "TEXT");
+  ensureColumn(database, "offerings", "currency", "TEXT");
+  ensureColumn(database, "offerings", "price_unit", "TEXT");
+  ensureColumn(
+    database,
+    "offerings",
+    "price_status",
+    "TEXT NOT NULL DEFAULT 'unknown'",
+  );
+  ensureColumn(
+    database,
+    "offerings",
+    "is_official_api",
+    "INTEGER NOT NULL DEFAULT 0",
+  );
+  ensureColumn(database, "offerings", "market", "TEXT");
+  ensureColumn(database, "offerings", "price_note", "TEXT");
+  ensureColumn(database, "offerings", "verified_at", "TEXT");
+  ensureColumn(
+    database,
+    "offerings",
+    "pricing_tiers_json",
+    "TEXT NOT NULL DEFAULT '[]'",
+  );
+  database.exec(`
+    CREATE INDEX IF NOT EXISTS idx_offerings_official_price
+      ON offerings(canonical_model_id, is_official_api, market, price_status, active);
+    CREATE INDEX IF NOT EXISTS idx_provider_sources_country
+      ON provider_sources(country, price_status);
   `);
 
   return database;

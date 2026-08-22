@@ -3,6 +3,7 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { getDataDirectory, getDatabase } from "./database";
 import type { SyncResult } from "./types";
+import chinaOfficialData from "../../../data/official/china-api-prices.json";
 
 type JsonObject = Record<string, unknown>;
 
@@ -23,7 +24,44 @@ const SOURCE_ENDPOINTS = {
     name: "OpenRouter 模型目录",
     url: "https://openrouter.ai/api/v1/models?output_modalities=all",
   },
+  official_cn: {
+    name: "中国厂商官方 API 定价",
+    url: "data/official/china-api-prices.json",
+  },
 } as const;
+
+const US_DEVELOPERS = new Set([
+  "amazon",
+  "anthropic",
+  "google",
+  "meta",
+  "microsoft",
+  "nvidia",
+  "openai",
+  "perplexity",
+  "xai",
+]);
+
+const DIRECT_US_PROVIDERS = new Map([
+  ["anthropic", "anthropic"],
+  ["google", "google"],
+  ["openai", "openai"],
+  ["xai", "xai"],
+]);
+
+const CHINA_DEVELOPERS = new Set(
+  chinaOfficialData.providers.flatMap((provider) => provider.developer_ids),
+);
+
+function developerCountry(developer: string) {
+  if (CHINA_DEVELOPERS.has(developer)) return "CN";
+  if (US_DEVELOPERS.has(developer)) return "US";
+  return null;
+}
+
+function inferredPriceStatus(values: Array<number | null>) {
+  return values.some((value) => value !== null && value > 0) ? "priced" : "unknown";
+}
 
 function isObject(value: unknown): value is JsonObject {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -172,12 +210,12 @@ function upsertCanonicalModels(payload: unknown, now: string) {
 
   const statement = database.prepare(`
     INSERT INTO canonical_models (
-      id, name, developer, family, description, release_date, knowledge_cutoff,
+      id, name, developer, developer_country, family, description, release_date, knowledge_cutoff,
       last_updated, context_window, max_output, input_modalities, output_modalities,
       reasoning, tool_call, structured_output, attachment, open_weights,
       benchmarks_json, weights_json, source, raw_json, active, created_at, updated_at
     ) VALUES (
-      @id, @name, @developer, @family, @description, @releaseDate, @knowledgeCutoff,
+      @id, @name, @developer, @developerCountry, @family, @description, @releaseDate, @knowledgeCutoff,
       @lastUpdated, @contextWindow, @maxOutput, @inputModalities, @outputModalities,
       @reasoning, @toolCall, @structuredOutput, @attachment, @openWeights,
       @benchmarks, @weights, 'models.dev', @raw, 1, @now, @now
@@ -185,6 +223,7 @@ function upsertCanonicalModels(payload: unknown, now: string) {
     ON CONFLICT(id) DO UPDATE SET
       name = excluded.name,
       developer = excluded.developer,
+      developer_country = excluded.developer_country,
       family = excluded.family,
       description = excluded.description,
       release_date = excluded.release_date,
@@ -209,12 +248,14 @@ function upsertCanonicalModels(payload: unknown, now: string) {
   for (const [key, rawValue] of Object.entries(records)) {
     const model = object(rawValue);
     const id = stringValue(model.id) ?? key;
+    const developer = id.split("/")[0] ?? "unknown";
     const modalities = object(model.modalities);
     const limits = object(model.limit);
     statement.run({
       id,
       name: stringValue(model.name) ?? id,
-      developer: id.split("/")[0] ?? "unknown",
+      developer,
+      developerCountry: developerCountry(developer),
       family: stringValue(model.family),
       description: stringValue(model.description),
       releaseDate: stringValue(model.release_date),
@@ -260,6 +301,14 @@ type OfferingWrite = {
   outputPrice: number | null;
   cacheReadPrice: number | null;
   cacheWritePrice: number | null;
+  currency: "CNY" | "USD" | null;
+  priceUnit: string | null;
+  priceStatus: "priced" | "free" | "unknown";
+  isOfficialApi: number;
+  market: "CN" | "US" | null;
+  priceNote: string | null;
+  verifiedAt: string | null;
+  pricingTiers: string;
   reasoning: number | null;
   toolCall: number | null;
   structuredOutput: number | null;
@@ -280,14 +329,18 @@ function offeringStatement() {
       uid, source, source_model_id, canonical_model_id, provider_id, provider_name,
       name, developer, family, description, mode, input_modalities, output_modalities,
       context_window, max_input, max_output, input_price, output_price,
-      cache_read_price, cache_write_price, reasoning, tool_call, structured_output,
+      cache_read_price, cache_write_price, currency, price_unit, price_status,
+      is_official_api, market, price_note, verified_at, pricing_tiers_json,
+      reasoning, tool_call, structured_output,
       open_weights, release_date, deprecation_date, status, match_status,
       match_confidence, source_url, raw_json, active, created_at, updated_at
     ) VALUES (
       @uid, @source, @sourceModelId, @canonicalModelId, @providerId, @providerName,
       @name, @developer, @family, @description, @mode, @inputModalities, @outputModalities,
       @contextWindow, @maxInput, @maxOutput, @inputPrice, @outputPrice,
-      @cacheReadPrice, @cacheWritePrice, @reasoning, @toolCall, @structuredOutput,
+      @cacheReadPrice, @cacheWritePrice, @currency, @priceUnit, @priceStatus,
+      @isOfficialApi, @market, @priceNote, @verifiedAt, @pricingTiers,
+      @reasoning, @toolCall, @structuredOutput,
       @openWeights, @releaseDate, @deprecationDate, @status, @matchStatus,
       @matchConfidence, @sourceUrl, @raw, 1, @now, @now
     )
@@ -309,6 +362,14 @@ function offeringStatement() {
       output_price = excluded.output_price,
       cache_read_price = excluded.cache_read_price,
       cache_write_price = excluded.cache_write_price,
+      currency = excluded.currency,
+      price_unit = excluded.price_unit,
+      price_status = excluded.price_status,
+      is_official_api = excluded.is_official_api,
+      market = excluded.market,
+      price_note = excluded.price_note,
+      verified_at = excluded.verified_at,
+      pricing_tiers_json = excluded.pricing_tiers_json,
       reasoning = excluded.reasoning,
       tool_call = excluded.tool_call,
       structured_output = excluded.structured_output,
@@ -349,6 +410,14 @@ function upsertModelsDevOfferings(payload: unknown, now: string) {
       const modalities = object(model.modalities);
       const limits = object(model.limit);
       const costs = object(model.cost);
+      const developer = identity.id?.split("/")[0] ?? sourceModelId.split("/")[0] ?? providerId;
+      const inputPrice = numberValue(costs.input);
+      const outputPrice = numberValue(costs.output);
+      const cacheReadPrice = numberValue(costs.cache_read);
+      const cacheWritePrice = numberValue(costs.cache_write);
+      const country = developerCountry(developer);
+      const isOfficialApi =
+        country === "US" && DIRECT_US_PROVIDERS.get(developer) === providerId;
 
       const row: OfferingWrite = {
         uid: stableUid("models.dev", providerId, sourceModelId),
@@ -358,7 +427,7 @@ function upsertModelsDevOfferings(payload: unknown, now: string) {
         providerId,
         providerName,
         name,
-        developer: sourceModelId.split("/")[0] ?? providerId,
+        developer,
         family: stringValue(model.family),
         description: stringValue(model.description),
         mode: "chat",
@@ -367,10 +436,23 @@ function upsertModelsDevOfferings(payload: unknown, now: string) {
         contextWindow: numberValue(limits.context),
         maxInput: numberValue(limits.input),
         maxOutput: numberValue(limits.output),
-        inputPrice: numberValue(costs.input),
-        outputPrice: numberValue(costs.output),
-        cacheReadPrice: numberValue(costs.cache_read),
-        cacheWritePrice: numberValue(costs.cache_write),
+        inputPrice,
+        outputPrice,
+        cacheReadPrice,
+        cacheWritePrice,
+        currency: "USD",
+        priceUnit: "per_million_tokens",
+        priceStatus: inferredPriceStatus([
+          inputPrice,
+          outputPrice,
+          cacheReadPrice,
+          cacheWritePrice,
+        ]),
+        isOfficialApi: Number(isOfficialApi),
+        market: country,
+        priceNote: isOfficialApi ? "美国厂商官方 API 渠道价" : "第三方来源中的 API 渠道价",
+        verifiedAt: isOfficialApi ? now.slice(0, 10) : null,
+        pricingTiers: "[]",
         reasoning: booleanValue(model.reasoning),
         toolCall: booleanValue(model.tool_call),
         structuredOutput: booleanValue(model.structured_output),
@@ -406,6 +488,9 @@ function upsertLiteLlmOfferings(payload: unknown, now: string) {
     const providerId = stringValue(model.litellm_provider) ?? "unknown";
     const name = sourceModelId.split("/").at(-1) ?? sourceModelId;
     const identity = match("litellm", sourceModelId, name);
+    const developer =
+      identity.id?.split("/")[0] ??
+      (sourceModelId.includes("/") ? sourceModelId.split("/")[0] : providerId);
     const deprecationDate = stringValue(model.deprecation_date);
     const status = deprecationDate && deprecationDate <= now.slice(0, 10) ? "deprecated" : "active";
 
@@ -417,7 +502,7 @@ function upsertLiteLlmOfferings(payload: unknown, now: string) {
       providerId,
       providerName: providerId,
       name,
-      developer: sourceModelId.includes("/") ? sourceModelId.split("/")[0] : providerId,
+      developer,
       family: null,
       description: stringValue(object(model.metadata).notes),
       mode: stringValue(model.mode),
@@ -438,6 +523,19 @@ function upsertLiteLlmOfferings(payload: unknown, now: string) {
       outputPrice: perMillion(model.output_cost_per_token),
       cacheReadPrice: perMillion(model.cache_read_input_token_cost),
       cacheWritePrice: perMillion(model.cache_creation_input_token_cost),
+      currency: "USD",
+      priceUnit: "per_million_tokens",
+      priceStatus: inferredPriceStatus([
+        perMillion(model.input_cost_per_token),
+        perMillion(model.output_cost_per_token),
+        perMillion(model.cache_read_input_token_cost),
+        perMillion(model.cache_creation_input_token_cost),
+      ]),
+      isOfficialApi: 0,
+      market: developerCountry(developer),
+      priceNote: "LiteLLM 收录的 API 渠道价；不是中国厂商官方人民币价。",
+      verifiedAt: null,
+      pricingTiers: "[]",
       reasoning: booleanValue(model.supports_reasoning),
       toolCall: booleanValue(model.supports_function_calling),
       structuredOutput: booleanValue(model.supports_response_schema),
@@ -499,6 +597,19 @@ function upsertOpenRouterOfferings(payload: unknown, now: string) {
       outputPrice: perMillion(pricing.completion),
       cacheReadPrice: perMillion(pricing.input_cache_read),
       cacheWritePrice: perMillion(pricing.input_cache_write),
+      currency: "USD",
+      priceUnit: "per_million_tokens",
+      priceStatus: inferredPriceStatus([
+        perMillion(pricing.prompt),
+        perMillion(pricing.completion),
+        perMillion(pricing.input_cache_read),
+        perMillion(pricing.input_cache_write),
+      ]),
+      isOfficialApi: 0,
+      market: developerCountry((canonicalSlug ?? sourceModelId).split("/")[0] ?? "unknown"),
+      priceNote: "OpenRouter API 渠道价；不是模型厂商官方直连价。",
+      verifiedAt: null,
+      pricingTiers: "[]",
       reasoning: booleanValue(Boolean(model.reasoning)),
       toolCall: booleanValue(supported.includes("tools")),
       structuredOutput: booleanValue(
@@ -514,6 +625,148 @@ function upsertOpenRouterOfferings(payload: unknown, now: string) {
       matchConfidence: identity.confidence,
       sourceUrl: `https://openrouter.ai/${sourceModelId}`,
       raw: JSON.stringify(model),
+      now,
+    } satisfies OfferingWrite);
+    count += 1;
+  }
+
+  return count;
+}
+
+type CanonicalOfferingSeed = {
+  family: string | null;
+  description: string | null;
+  input_modalities: string;
+  output_modalities: string;
+  context_window: number | null;
+  max_output: number | null;
+  reasoning: number | null;
+  tool_call: number | null;
+  structured_output: number | null;
+  open_weights: number | null;
+  release_date: string | null;
+};
+
+function upsertOfficialChinaPrices(now: string) {
+  const database = getDatabase();
+  const verifiedAt = chinaOfficialData.verified_at;
+
+  const writeProvider = database.prepare(`
+    INSERT INTO provider_sources (
+      id, name, company, country, developer_ids_json, homepage_url, pricing_url,
+      api_status, price_status, notes, verified_at, updated_at
+    ) VALUES (
+      @id, @name, @company, @country, @developerIds, @homepageUrl, @pricingUrl,
+      @apiStatus, @priceStatus, @notes, @verifiedAt, @now
+    )
+    ON CONFLICT(id) DO UPDATE SET
+      name = excluded.name,
+      company = excluded.company,
+      country = excluded.country,
+      developer_ids_json = excluded.developer_ids_json,
+      homepage_url = excluded.homepage_url,
+      pricing_url = excluded.pricing_url,
+      api_status = excluded.api_status,
+      price_status = excluded.price_status,
+      notes = excluded.notes,
+      verified_at = excluded.verified_at,
+      updated_at = excluded.updated_at
+  `);
+
+  for (const provider of chinaOfficialData.providers) {
+    writeProvider.run({
+      id: provider.id,
+      name: provider.name,
+      company: provider.company,
+      country: provider.country,
+      developerIds: JSON.stringify(provider.developer_ids),
+      homepageUrl: provider.homepage_url,
+      pricingUrl: provider.pricing_url,
+      apiStatus: provider.api_status,
+      priceStatus: provider.price_status,
+      notes: provider.notes,
+      verifiedAt,
+      now,
+    });
+
+    for (const developer of provider.developer_ids) {
+      database
+        .prepare("UPDATE canonical_models SET developer_country = 'CN' WHERE developer = ?")
+        .run(developer);
+    }
+  }
+
+  database
+    .prepare("UPDATE offerings SET active = 0 WHERE source = 'official-cn'")
+    .run();
+
+  const providerNames = new Map(
+    chinaOfficialData.providers.map((provider) => [provider.id, provider.name]),
+  );
+  const write = offeringStatement();
+  const match = createMatcher();
+  let count = 0;
+
+  for (const price of chinaOfficialData.prices) {
+    const identity = match(
+      "official-cn",
+      price.model_id,
+      price.name,
+      price.canonical_id,
+    );
+    const seed = identity.id
+      ? (database
+          .prepare(`
+            SELECT family, description, input_modalities, output_modalities,
+              context_window, max_output, reasoning, tool_call, structured_output,
+              open_weights, release_date
+            FROM canonical_models WHERE id = ?
+          `)
+          .get(identity.id) as CanonicalOfferingSeed | undefined)
+      : undefined;
+    const developer = price.canonical_id.split("/")[0] ?? price.provider_id;
+
+    write.run({
+      uid: stableUid("official-cn", price.provider_id, price.model_id),
+      source: "official-cn",
+      sourceModelId: price.model_id,
+      canonicalModelId: identity.id,
+      providerId: price.provider_id,
+      providerName: providerNames.get(price.provider_id) ?? price.provider_id,
+      name: price.name,
+      developer,
+      family: seed?.family ?? null,
+      description: seed?.description ?? null,
+      mode: "chat",
+      inputModalities: seed?.input_modalities ?? '["text"]',
+      outputModalities: seed?.output_modalities ?? '["text"]',
+      contextWindow: price.context_window ?? seed?.context_window ?? null,
+      maxInput: null,
+      maxOutput: seed?.max_output ?? null,
+      inputPrice: price.input_price,
+      outputPrice: price.output_price,
+      cacheReadPrice: price.cache_read_price,
+      cacheWritePrice: price.cache_write_price,
+      currency: "CNY",
+      priceUnit: price.unit,
+      priceStatus: price.price_status as "priced" | "free",
+      isOfficialApi: 1,
+      market: "CN",
+      priceNote: price.note,
+      verifiedAt,
+      pricingTiers: JSON.stringify(price.tiers),
+      reasoning: seed?.reasoning ?? null,
+      toolCall: seed?.tool_call ?? null,
+      structuredOutput: seed?.structured_output ?? null,
+      openWeights: seed?.open_weights ?? null,
+      releaseDate: seed?.release_date ?? null,
+      deprecationDate:
+        price.canonical_id === "tencent/hy3-preview" ? "2026-08-31" : null,
+      status: "active",
+      matchStatus: identity.status,
+      matchConfidence: identity.confidence,
+      sourceUrl: price.source_url,
+      raw: JSON.stringify(price),
       now,
     } satisfies OfferingWrite);
     count += 1;
@@ -575,6 +828,7 @@ export async function syncCatalog(): Promise<SyncResult> {
         modelsdev_offerings: upsertModelsDevOfferings(modelsDevOfferings, now),
         litellm: upsertLiteLlmOfferings(liteLlm, now),
         openrouter: upsertOpenRouterOfferings(openRouter, now),
+        official_cn: upsertOfficialChinaPrices(now),
       };
 
       for (const [source, count] of Object.entries(result)) {

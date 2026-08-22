@@ -9,12 +9,14 @@ import {
   CircleAlert,
   Database,
   Download,
+  ExternalLink,
   Filter,
   Layers3,
   LoaderCircle,
   PanelRightClose,
   RefreshCw,
   Search,
+  ShieldCheck,
   SlidersHorizontal,
   Sparkles,
   Tag,
@@ -25,6 +27,7 @@ import type {
   CatalogItem,
   CatalogPayload,
   CatalogView,
+  PriceStatus,
 } from "@/lib/catalog/types";
 
 const PAGE_SIZE = 50;
@@ -42,6 +45,8 @@ type FilterState = {
   developers: string[];
   providers: string[];
   sources: string[];
+  countries: string[];
+  priceStatuses: string[];
   modalities: string[];
   capabilities: string[];
   matchStatuses: string[];
@@ -60,6 +65,8 @@ const EMPTY_FILTERS: FilterState = {
   developers: [],
   providers: [],
   sources: [],
+  countries: [],
+  priceStatuses: [],
   modalities: [],
   capabilities: [],
   matchStatuses: [],
@@ -71,7 +78,19 @@ const CAPABILITIES = [
   { value: "toolCall", label: "工具调用" },
   { value: "structuredOutput", label: "结构化输出" },
   { value: "openWeights", label: "开源权重" },
+  { value: "officialApi", label: "官方 API" },
 ];
+
+const PRICE_STATUS_LABELS: Record<string, string> = {
+  priced: "已公布",
+  free: "官方免费",
+  unknown: "未公布",
+};
+
+const COUNTRY_LABELS: Record<string, string> = {
+  CN: "中国",
+  US: "美国",
+};
 
 const MATCH_LABELS: Record<string, string> = {
   canonical: "底层模型",
@@ -88,12 +107,17 @@ function formatCompact(value: number | null) {
   return String(value);
 }
 
-function formatPrice(value: number | null) {
-  if (value === null || value === undefined) return "—";
-  if (value === 0) return "Free";
-  if (value < 0.01) return `$${value.toFixed(4)}`;
-  if (value < 1) return `$${value.toFixed(3)}`;
-  return `$${value.toFixed(2)}`;
+function formatPrice(
+  value: number | null,
+  currency: "CNY" | "USD" | null,
+  status: PriceStatus,
+) {
+  if (status === "free") return "免费";
+  if (status === "unknown" || value === null || value === undefined) return "未公布";
+  const symbol = currency === "CNY" ? "¥" : currency === "USD" ? "$" : "";
+  if (value < 0.01) return `${symbol}${value.toFixed(4)}`;
+  if (value < 1) return `${symbol}${value.toFixed(3)}`;
+  return `${symbol}${value.toFixed(2)}`;
 }
 
 function formatDate(value: string | null) {
@@ -205,7 +229,14 @@ function BooleanMark({ value }: { value: boolean | null }) {
 }
 
 function SourceBadge({ source }: { source: string }) {
-  const label = source === "models.dev" ? "M.dev" : source === "openrouter" ? "OR" : "Lite";
+  const label =
+    source === "official-cn"
+      ? "CN 官网"
+      : source === "models.dev"
+        ? "M.dev"
+        : source === "openrouter"
+          ? "OR"
+          : "Lite";
   return <span className={`source-badge source-${source.replace(".", "-")}`}>{label}</span>;
 }
 
@@ -231,6 +262,7 @@ export function CatalogApp() {
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedViews, setSavedViews] = useState<SavedView[]>([]);
+  const [showSources, setShowSources] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -273,6 +305,8 @@ export function CatalogApp() {
       developers: uniqueSorted(items.map((item) => item.developer)),
       providers: uniqueSorted(items.map((item) => item.provider)),
       sources: uniqueSorted(items.map((item) => item.source)),
+      countries: uniqueSorted(items.map((item) => item.developerCountry)),
+      priceStatuses: uniqueSorted(items.map((item) => item.priceStatus)),
       modalities: uniqueSorted(
         items.flatMap((item) => [...item.inputModalities, ...item.outputModalities]),
       ),
@@ -301,6 +335,11 @@ export function CatalogApp() {
       if (filters.providers.length && (!item.provider || !filters.providers.includes(item.provider))) return false;
       if (filters.sources.length && !filters.sources.includes(item.source)) return false;
       if (
+        filters.countries.length &&
+        (!item.developerCountry || !filters.countries.includes(item.developerCountry))
+      ) return false;
+      if (filters.priceStatuses.length && !filters.priceStatuses.includes(item.priceStatus)) return false;
+      if (
         filters.modalities.length &&
         !filters.modalities.some((modality) =>
           [...item.inputModalities, ...item.outputModalities].includes(modality),
@@ -314,9 +353,11 @@ export function CatalogApp() {
             ? !item.reasoning
             : capability === "toolCall"
               ? !item.toolCall
-              : capability === "structuredOutput"
+            : capability === "structuredOutput"
                 ? !item.structuredOutput
-                : !item.openWeights,
+                : capability === "openWeights"
+                  ? !item.openWeights
+                  : !item.isOfficialApi,
         )
       ) return false;
       return true;
@@ -342,6 +383,8 @@ export function CatalogApp() {
     filters.developers.length +
     filters.providers.length +
     filters.sources.length +
+    filters.countries.length +
+    filters.priceStatuses.length +
     filters.modalities.length +
     filters.capabilities.length +
     filters.matchStatuses.length +
@@ -396,7 +439,7 @@ export function CatalogApp() {
 
   const applySavedView = (view: SavedView) => {
     setCatalogView(view.catalogView);
-    setFilters(view.filters);
+    setFilters({ ...EMPTY_FILTERS, ...view.filters });
     setPage(1);
   };
 
@@ -411,6 +454,10 @@ export function CatalogApp() {
       "max_output",
       "input_price_per_million",
       "output_price_per_million",
+      "currency",
+      "price_status",
+      "official_api",
+      "price_source_url",
       "reasoning",
       "tool_call",
       "open_weights",
@@ -428,6 +475,10 @@ export function CatalogApp() {
         item.maxOutput,
         item.inputPrice,
         item.outputPrice,
+        item.currency,
+        item.priceStatus,
+        item.isOfficialApi,
+        item.sourceUrl,
         item.reasoning,
         item.toolCall,
         item.openWeights,
@@ -487,6 +538,9 @@ export function CatalogApp() {
               <span>最后同步</span>
               <strong>{formatSyncTime(stats?.lastSyncAt ?? null)}</strong>
             </div>
+            <button className="button button-source" type="button" onClick={() => setShowSources(true)}>
+              <ShieldCheck size={16} /> 厂商来源
+            </button>
             <button className="button button-primary" type="button" onClick={handleSync} disabled={syncing}>
               {syncing ? <LoaderCircle className="spin" size={16} /> : <RefreshCw size={16} />}
               {syncing ? "正在同步" : "立即同步"}
@@ -511,13 +565,18 @@ export function CatalogApp() {
           <div className="metric-card">
             <span>渠道记录</span>
             <strong>{stats?.activeOfferings.toLocaleString() ?? "—"}</strong>
-            <small>3 个来源全量保留</small>
+            <small>聚合来源与官方记录全量保留</small>
           </div>
           <div className="metric-card">
             <span>服务商</span>
             <strong>{stats?.providers.toLocaleString() ?? "—"}</strong>
             <small>按渠道 ID 去重</small>
           </div>
+          <button className="metric-card metric-source" type="button" onClick={() => setShowSources(true)}>
+            <span>中国厂商来源</span>
+            <strong>{stats?.officialChinaSources.toLocaleString() ?? "—"}</strong>
+            <small>已核价 {stats?.verifiedChinaSources ?? 0} 家 · 查看来源册</small>
+          </button>
           <div className="metric-card metric-warning">
             <span>待归并</span>
             <strong>{stats?.unmatchedOfferings.toLocaleString() ?? "—"}</strong>
@@ -586,6 +645,24 @@ export function CatalogApp() {
               options={facets.developers.map((value) => ({ value, label: value }))}
               selected={filters.developers}
               onChange={(developers) => updateFilters({ developers })}
+            />
+            <MultiFilter
+              label="国家"
+              options={facets.countries.map((value) => ({
+                value,
+                label: COUNTRY_LABELS[value] ?? value,
+              }))}
+              selected={filters.countries}
+              onChange={(countries) => updateFilters({ countries })}
+            />
+            <MultiFilter
+              label="价格状态"
+              options={facets.priceStatuses.map((value) => ({
+                value,
+                label: PRICE_STATUS_LABELS[value] ?? value,
+              }))}
+              selected={filters.priceStatuses}
+              onChange={(priceStatuses) => updateFilters({ priceStatuses })}
             />
             {catalogView === "offerings" && (
               <MultiFilter
@@ -662,7 +739,7 @@ export function CatalogApp() {
 
           <div className="result-bar">
             <span><Filter size={14} /> 筛选结果 <strong>{filteredItems.length.toLocaleString()}</strong></span>
-            <span>价格单位：USD / 1M tokens</span>
+            <span>价格：中美厂商 API 原币价 / 1M tokens · 人民币不做汇率换算</span>
           </div>
 
           {loading ? (
@@ -728,6 +805,7 @@ export function CatalogApp() {
                           <div className="provider-cell">
                             <SourceBadge source={item.source} />
                             <span>{item.provider}</span>
+                            {item.isOfficialApi && <span className="official-pill">官方</span>}
                           </div>
                         </td>
                       )}
@@ -739,8 +817,12 @@ export function CatalogApp() {
                         </div>
                       </td>
                       <td className="number-cell">{formatCompact(item.contextWindow)}</td>
-                      <td className="number-cell price-cell">{formatPrice(item.inputPrice)}</td>
-                      <td className="number-cell price-cell">{formatPrice(item.outputPrice)}</td>
+                      <td className="number-cell price-cell">
+                        {formatPrice(item.inputPrice, item.currency, item.priceStatus)}
+                      </td>
+                      <td className="number-cell price-cell">
+                        {formatPrice(item.outputPrice, item.currency, item.priceStatus)}
+                      </td>
                       <td className="center"><BooleanMark value={item.reasoning} /></td>
                       <td className="center"><BooleanMark value={item.toolCall} /></td>
                       <td className="center"><BooleanMark value={item.openWeights} /></td>
@@ -789,6 +871,61 @@ export function CatalogApp() {
         </footer>
       </main>
 
+      {showSources && (
+        <div className="detail-backdrop" onMouseDown={() => setShowSources(false)}>
+          <aside
+            className="detail-panel source-panel"
+            onMouseDown={(event) => event.stopPropagation()}
+            aria-label="中国模型厂商来源册"
+          >
+            <div className="detail-head">
+              <div>
+                <span className="eyebrow">OFFICIAL SOURCE REGISTRY</span>
+                <h2>中国厂商来源册</h2>
+                <code>{payload?.providerSources.length ?? 0} 家已登记 · 不做汇率换算</code>
+              </div>
+              <button type="button" onClick={() => setShowSources(false)} aria-label="关闭来源册">
+                <PanelRightClose size={20} />
+              </button>
+            </div>
+            <p className="source-intro">
+              只把中国大陆官方页面公开的 API 按量价写入人民币价格；没有公开价的厂商保留来源和状态，不用第三方美元价补位。
+            </p>
+            <div className="source-registry-list">
+              {(payload?.providerSources ?? []).map((provider) => (
+                <article key={provider.id} className="source-registry-item">
+                  <div>
+                    <strong>{provider.name}</strong>
+                    <span>{provider.company}</span>
+                  </div>
+                  <span className={`source-status status-${provider.priceStatus}`}>
+                    {provider.priceStatus === "verified"
+                      ? "价格已核验"
+                      : provider.priceStatus === "pending"
+                        ? "待核验"
+                        : "未公开"}
+                  </span>
+                  <p>{provider.notes}</p>
+                  <nav>
+                    {provider.homepageUrl && (
+                      <a href={provider.homepageUrl} target="_blank" rel="noreferrer">
+                        官方网站 <ExternalLink size={11} />
+                      </a>
+                    )}
+                    {provider.pricingUrl && (
+                      <a href={provider.pricingUrl} target="_blank" rel="noreferrer">
+                        计费页面 <ExternalLink size={11} />
+                      </a>
+                    )}
+                    {provider.verifiedAt && <span>核验 {provider.verifiedAt}</span>}
+                  </nav>
+                </article>
+              ))}
+            </div>
+          </aside>
+        </div>
+      )}
+
       {selectedItem && (
         <div className="detail-backdrop" onMouseDown={() => setSelectedItem(null)}>
           <aside className="detail-panel" onMouseDown={(event) => event.stopPropagation()} aria-label="模型详情">
@@ -811,11 +948,24 @@ export function CatalogApp() {
               <div><span>家族</span><strong>{selectedItem.family || "—"}</strong></div>
               <div><span>上下文</span><strong>{formatCompact(selectedItem.contextWindow)}</strong></div>
               <div><span>最大输出</span><strong>{formatCompact(selectedItem.maxOutput)}</strong></div>
-              <div><span>输入价</span><strong>{formatPrice(selectedItem.inputPrice)}</strong></div>
-              <div><span>输出价</span><strong>{formatPrice(selectedItem.outputPrice)}</strong></div>
+              <div><span>输入价 / 1M</span><strong>{formatPrice(selectedItem.inputPrice, selectedItem.currency, selectedItem.priceStatus)}</strong></div>
+              <div><span>输出价 / 1M</span><strong>{formatPrice(selectedItem.outputPrice, selectedItem.currency, selectedItem.priceStatus)}</strong></div>
               <div><span>渠道</span><strong>{selectedItem.provider || `${selectedItem.offeringCount} 个渠道`}</strong></div>
               <div><span>数据来源</span><strong>{selectedItem.source}</strong></div>
+              <div><span>价格状态</span><strong>{PRICE_STATUS_LABELS[selectedItem.priceStatus] ?? selectedItem.priceStatus}</strong></div>
+              <div><span>核验日期</span><strong>{selectedItem.verifiedAt || "—"}</strong></div>
             </div>
+            {(selectedItem.priceNote || selectedItem.sourceUrl) && (
+              <div className="price-evidence">
+                <span>{selectedItem.isOfficialApi ? "官方 API 价格证据" : "价格说明"}</span>
+                <p>{selectedItem.priceNote || "该记录保留了原始来源链接。"}</p>
+                {selectedItem.sourceUrl && (
+                  <a href={selectedItem.sourceUrl} target="_blank" rel="noreferrer">
+                    打开来源页面 <ExternalLink size={13} />
+                  </a>
+                )}
+              </div>
+            )}
             <div className="capability-list">
               <div><BooleanMark value={selectedItem.reasoning} /><span>推理能力</span></div>
               <div><BooleanMark value={selectedItem.toolCall} /><span>工具调用</span></div>
