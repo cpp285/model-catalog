@@ -1,36 +1,69 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Model Index
 
-## Getting Started
+本地运行的 AI 模型资料库。前端页面、本地 API、数据同步和 SQLite 数据库均位于同一个 Next.js 项目中。
 
-First, run the development server:
+## 已实现
+
+- Models.dev 底层模型和渠道数据同步
+- LiteLLM 价格库同步
+- OpenRouter 全部输出模态数据同步
+- 底层模型与渠道服务分层存储
+- 精确匹配、规则匹配、人工确认和待归并状态
+- 搜索、多维下拉筛选、排序、分页和 CSV 导出
+- 浏览器本地保存筛选视图
+- 模型和渠道详情面板
+- 页面内一键同步
+
+## 本地启动
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+打开 [http://localhost:3000](http://localhost:3000)。
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## 数据同步
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+命令行手动同步：
 
-## Learn More
+```bash
+npm run catalog:sync
+```
 
-To learn more about Next.js, take a look at the following resources:
+查看当前数据统计：
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+npm run catalog:stats
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+也可以在页面右上角点击“立即同步”。同步需要联网，已有数据的查询和筛选不需要联网。
 
-## Deploy on Vercel
+## 数据位置
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```text
+data/
+├── catalog.db             # 结构化后的本地 SQLite 数据库
+└── raw/                   # 各数据源的最新原始 JSON
+    ├── modelsdev-models.json
+    ├── modelsdev-offerings.json
+    ├── litellm.json
+    └── openrouter.json
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+`catalog.db` 和原始 JSON 默认不提交到 Git。如需备份，关闭应用后复制整个 `data` 目录即可。
+
+## 核心表
+
+- `canonical_models`：底层模型身份和稳定能力。
+- `offerings`：各来源、服务商、区域和价格记录。
+- `manual_aliases`：人工确认的模型别名和归并关系。
+- `user_tags` / `model_user_tags`：与自动数据隔离的人工标签。
+- `sources` / `sync_runs`：数据源状态与同步记录。
+
+## 开发检查
+
+```bash
+npm run lint
+npm run build
+```
