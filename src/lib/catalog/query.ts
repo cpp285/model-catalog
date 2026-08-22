@@ -149,6 +149,13 @@ function contextTag(contextWindow: number | null) {
   return "常规上下文";
 }
 
+function catalogModelType(modelType: string, inputModalities: string[]) {
+  if (modelType !== "chat") return modelType;
+  return inputModalities.some((modality) => modality !== "text")
+    ? "multimodal_generation"
+    : "text_generation";
+}
+
 function tagsFor(item: Omit<CatalogItem, "tags">) {
   return [
     item.developerCountry === "CN" ? "中国模型" : null,
@@ -157,6 +164,8 @@ function tagsFor(item: Omit<CatalogItem, "tags">) {
     item.modelType === "embedding" ? "文本向量" : null,
     item.modelType === "multimodal_embedding" ? "多模态向量" : null,
     item.modelType === "rerank" ? "排序模型" : null,
+    item.modelType === "text_generation" ? "文本生成" : null,
+    item.modelType === "multimodal_generation" ? "多模态生成" : null,
     item.priceStatus === "free" ? "官方免费" : null,
     item.pricingTiers.length ? "阶梯价" : null,
     item.openWeights === true ? "开源模型" : null,
@@ -370,6 +379,7 @@ function getModels(): CatalogItem[] {
     .all() as ModelRow[];
 
   return rows.map((row) => {
+    const inputModalities = parseArray(row.input_modalities);
     const base: Omit<CatalogItem, "tags"> = {
       uid: row.id,
       view: "models",
@@ -379,12 +389,12 @@ function getModels(): CatalogItem[] {
       name: row.name,
       developer: row.developer,
       developerCountry: row.developer_country,
-      modelType: row.model_type,
+      modelType: catalogModelType(row.model_type, inputModalities),
       family: row.family,
       provider: row.price_provider,
       description: row.description,
       mode: "model",
-      inputModalities: parseArray(row.input_modalities),
+      inputModalities,
       outputModalities: parseArray(row.output_modalities),
       contextWindow: row.context_window,
       maxOutput: row.max_output,
@@ -441,6 +451,8 @@ function getOfferings(): CatalogItem[] {
 
   return rows.map((row) => {
     const country = row.developer_country ?? row.market;
+    const inputModalities = parseArray(row.input_modalities);
+    const rawModelType = row.model_type ?? row.mode ?? "unknown";
     const hideForeignChinaPrice =
       country === "CN" && !Boolean(row.is_official_api);
     const base: Omit<CatalogItem, "tags"> = {
@@ -452,12 +464,12 @@ function getOfferings(): CatalogItem[] {
       name: row.name,
       developer: row.developer,
       developerCountry: country,
-      modelType: row.model_type ?? row.mode ?? "unknown",
+      modelType: catalogModelType(rawModelType, inputModalities),
       family: row.family,
       provider: row.provider_name,
       description: row.description,
       mode: row.mode,
-      inputModalities: parseArray(row.input_modalities),
+      inputModalities,
       outputModalities: parseArray(row.output_modalities),
       contextWindow: row.context_window,
       maxOutput: row.max_output,

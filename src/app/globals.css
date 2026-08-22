@@ -4801,6 +4801,18 @@ button.metric-card {
   color: #655f58;
 }
 
+.type-text_generation {
+  border-color: #dededb;
+  background: #f0f0ed;
+  color: #5f605c;
+}
+
+.type-multimodal_generation {
+  border-color: #d7dfe3;
+  background: #eaf0f2;
+  color: #53646b;
+}
+
 .type-embedding,
 .type-multimodal_embedding {
   border-color: #d7e1d8;

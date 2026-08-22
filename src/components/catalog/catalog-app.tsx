@@ -121,7 +121,9 @@ const DEVELOPER_LABELS: Record<string, string> = {
 };
 
 const MODEL_TYPE_LABELS: Record<string, string> = {
-  chat: "文本/多模态生成（LLM / VLM）",
+  text_generation: "文本生成（LLM）",
+  multimodal_generation: "多模态生成（VLM）",
+  chat: "对话生成（Chat）",
   image_generation: "图像生成（Image Generation）",
   video_generation: "视频生成（Video Generation）",
   three_d_generation: "3D 生成（3D Generation）",
@@ -253,7 +255,13 @@ function normalizeFilters(value?: LegacyFilterState): FilterState {
     developers: value?.developers ?? [],
     countries: value?.countries ?? [],
     priceStatuses: value?.priceStatuses ?? [],
-    classifications: uniqueSorted(value?.classifications ?? legacyClassifications),
+    classifications: uniqueSorted(
+      (value?.classifications ?? legacyClassifications).flatMap((classification) =>
+        classification === "type:chat"
+          ? ["type:text_generation", "type:multimodal_generation"]
+          : [classification],
+      ),
+    ),
     openness: uniqueSorted(openness),
     minContext: value?.minContext ?? 0,
   };
