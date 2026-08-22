@@ -1093,9 +1093,31 @@ export function CatalogApp() {
                             {MODEL_TYPE_LABELS[item.modelType] ?? item.modelType}
                           </span>
                           <div className="modality-pair">
-                            <span>{item.inputModalities.join(" + ") || "—"}</span>
+                            <span className="modality-group" aria-label={`输入模态：${item.inputModalities.join("、") || "无"}`}>
+                              {item.inputModalities.length > 0
+                                ? item.inputModalities.map((modality) => (
+                                  <span
+                                    className={`modality-chip modality-${modality.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
+                                    key={`${item.uid}-input-${modality}`}
+                                  >
+                                    {modality}
+                                  </span>
+                                ))
+                                : <span className="modality-empty">—</span>}
+                            </span>
                             <i>→</i>
-                            <span>{item.outputModalities.join(" + ") || "—"}</span>
+                            <span className="modality-group" aria-label={`输出模态：${item.outputModalities.join("、") || "无"}`}>
+                              {item.outputModalities.length > 0
+                                ? item.outputModalities.map((modality) => (
+                                  <span
+                                    className={`modality-chip modality-${modality.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
+                                    key={`${item.uid}-output-${modality}`}
+                                  >
+                                    {modality}
+                                  </span>
+                                ))
+                                : <span className="modality-empty">—</span>}
+                            </span>
                           </div>
                         </div>
                       </td>

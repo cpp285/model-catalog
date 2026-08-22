@@ -4651,3 +4651,378 @@ button.metric-card {
     padding: 22px;
   }
 }
+
+/* -------------------------------------------------------------------------- */
+/* Legibility pass + low-saturation semantic labels                           */
+/* -------------------------------------------------------------------------- */
+
+.side-nav-item {
+  font-size: 13px;
+}
+
+.catalog-header p {
+  font-size: 14px;
+}
+
+.button {
+  font-size: 12px;
+}
+
+.sync-meta span,
+.sync-meta strong {
+  font-size: 10px;
+}
+
+.metric-card > span {
+  font-size: 11px;
+}
+
+.metric-card small {
+  font-size: 10px;
+}
+
+.sync-policy-heading strong,
+.sync-policy-item b {
+  font-size: 12px;
+}
+
+.sync-policy-heading span,
+.sync-policy-item span {
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.workspace-title > span,
+.workspace-title b,
+.view-switcher span {
+  font-size: 9px;
+}
+
+.saved-menu summary,
+.saved-menu > div button,
+.search-box input,
+.filter-trigger,
+.filter-option,
+.context-options button {
+  font-size: 12px;
+}
+
+.filter-popover-head,
+.clear-filters {
+  font-size: 11px;
+}
+
+.filter-option-group {
+  font-size: 9px;
+}
+
+.result-bar {
+  min-height: 44px;
+  font-size: 11px;
+}
+
+.catalog-table {
+  min-width: 1510px;
+  font-size: 12px;
+}
+
+.catalog-table th {
+  height: 50px;
+  padding-inline: 14px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.catalog-table td {
+  height: 78px;
+  padding: 11px 14px;
+}
+
+.catalog-table .model-column {
+  width: 330px;
+  min-width: 330px;
+}
+
+.catalog-table .row-number {
+  font-size: 11px;
+}
+
+.model-avatar {
+  width: 44px;
+  height: 44px;
+  flex-basis: 44px;
+  font-size: 13px;
+}
+
+.model-cell strong {
+  max-width: 235px;
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.model-cell span {
+  max-width: 235px;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.retired-pill,
+.history-pill,
+.official-pill,
+.source-badge {
+  font-size: 10px;
+}
+
+.provider-cell {
+  max-width: 220px;
+  gap: 7px;
+  font-size: 12px;
+}
+
+.type-modality-cell {
+  min-width: 285px;
+  gap: 8px;
+}
+
+.model-type-pill {
+  border: 1px solid #e2e0dd;
+  border-radius: 999px;
+  background: #f1efec;
+  color: #625d57;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.2;
+}
+
+.type-chat {
+  border-color: #e2ded8;
+  background: #f2efeb;
+  color: #655f58;
+}
+
+.type-embedding,
+.type-multimodal_embedding {
+  border-color: #d7e1d8;
+  background: #eaf0eb;
+  color: #526459;
+}
+
+.type-rerank {
+  border-color: #dfd9e4;
+  background: #efebf2;
+  color: #655b6c;
+}
+
+.type-ocr {
+  border-color: #e5dfce;
+  background: #f3efe4;
+  color: #6a6049;
+}
+
+.type-image_generation {
+  border-color: #eadbd4;
+  background: #f5ebe7;
+  color: #73594e;
+}
+
+.type-video_generation {
+  border-color: #dcdae6;
+  background: #edecf3;
+  color: #5f5c70;
+}
+
+.type-three_d_generation {
+  border-color: #e5dccb;
+  background: #f2ede3;
+  color: #6b604d;
+}
+
+.type-audio_generation,
+.type-music_generation {
+  border-color: #e5d9df;
+  background: #f3eaee;
+  color: #6c5962;
+}
+
+.type-text_to_speech {
+  border-color: #d5e0e4;
+  background: #eaf0f2;
+  color: #52656d;
+}
+
+.type-speech_to_text {
+  border-color: #d5dfdc;
+  background: #e9efed;
+  color: #51635e;
+}
+
+.type-speech_to_speech {
+  border-color: #d3dfdf;
+  background: #e8efef;
+  color: #506666;
+}
+
+.type-industry {
+  border-color: #dedee1;
+  background: #eeeeef;
+  color: #5c5e64;
+}
+
+.modality-pair {
+  min-height: 24px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--ink-soft);
+  font-size: 10px;
+}
+
+.modality-group {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.modality-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  border: 1px solid #e2e2e4;
+  border-radius: 999px;
+  background: #f1f1f2;
+  color: #64666c;
+  padding: 2px 7px;
+  font-family: var(--mono-font);
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 1;
+}
+
+.modality-text {
+  border-color: #dfdfe1;
+  background: #f0f0f1;
+  color: #606267;
+}
+
+.modality-image {
+  border-color: #eadbd3;
+  background: #f6ece7;
+  color: #735c52;
+}
+
+.modality-video {
+  border-color: #dddbe7;
+  background: #eeedf4;
+  color: #605e70;
+}
+
+.modality-audio {
+  border-color: #d6e1e4;
+  background: #eaf1f3;
+  color: #53666d;
+}
+
+.modality-pdf {
+  border-color: #e5dece;
+  background: #f3efe5;
+  color: #6b624e;
+}
+
+.modality-embedding {
+  border-color: #d6e0d8;
+  background: #e9f0eb;
+  color: #526359;
+}
+
+.modality-score {
+  border-color: #e1dae5;
+  background: #f0ecf2;
+  color: #665b6d;
+}
+
+.modality-empty {
+  color: #999ba1;
+}
+
+.modality-pair i {
+  color: #9b7a6c;
+  font-size: 11px;
+}
+
+.number-cell,
+.date-cell,
+.price-cell {
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.price-cell {
+  color: #355f5b;
+  font-weight: 700;
+}
+
+.openness-mark {
+  font-size: 10px;
+}
+
+.table-footer,
+.pagination button {
+  font-size: 11px;
+}
+
+.workbench-section-head p,
+.modebar-copy p,
+.key-safety-note,
+.workbench-notice {
+  font-size: 11px;
+}
+
+.editable-field > span,
+.workbench-kind-select > span {
+  font-size: 10px;
+}
+
+.field-control input,
+.field-control textarea,
+.workbench-kind-select select,
+.output-body p {
+  font-size: 12px;
+}
+
+.detail-grid span,
+.mapping-note > span,
+.price-evidence > span,
+.pricing-detail > span,
+.spec-detail > span {
+  font-size: 10px;
+}
+
+.detail-grid strong,
+.price-evidence p {
+  font-size: 12px;
+}
+
+@media (max-width: 760px) {
+  .catalog-header p {
+    font-size: 12px;
+  }
+
+  .side-nav-item {
+    font-size: 11px;
+  }
+
+  .metric-card > span,
+  .metric-card small {
+    font-size: 10px;
+  }
+
+  .catalog-table {
+    min-width: 1480px;
+  }
+
+  .catalog-table td {
+    height: 76px;
+  }
+}
