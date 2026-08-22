@@ -1,0 +1,12 @@
+{
+  "verified_at": "2026-08-22",
+  "records": [
+    {
+      "canonical_id": "zhipuai/glm-5.3",
+      "status": "announced_pending",
+      "open_weights": null,
+      "source_url": "https://z.ai/blog/glm-5.3",
+      "note": "智谱已宣布 GLM-5.3 将开放权重，但截至核验日官方权重尚未发布，因此不能标记为闭源，也暂不标记为已开源。"
+    }
+  ]
+}

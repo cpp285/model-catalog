@@ -1,0 +1,59 @@
+{
+  "verified_at": "2026-08-22",
+  "models": [
+    {
+      "id": "minimax/minimax-h3",
+      "name": "MiniMax H3",
+      "developer": "minimax",
+      "developer_country": "CN",
+      "model_type": "video_generation",
+      "family": "MiniMax H3",
+      "description": "MiniMax 开源全模态音视频生成模型，可统一理解文本、图像、视频和音频上下文，并生成带原生双声道音频的视频。",
+      "release_date": "2026-07-31",
+      "context_window": null,
+      "max_output": null,
+      "input_modalities": ["text", "image", "video", "audio"],
+      "output_modalities": ["video", "audio"],
+      "reasoning": null,
+      "tool_call": false,
+      "structured_output": false,
+      "open_weights": true,
+      "source_url": "https://www.minimax.cn/blog/minimax-h3",
+      "weights_url": "https://huggingface.co/MiniMaxAI/MiniMax-H3",
+      "code_url": "https://github.com/MiniMax-AI/MiniMax-H3",
+      "specs": {
+        "parameters_billion": 33,
+        "max_duration_seconds": 15,
+        "max_resolution": "2K",
+        "native_audio": "双声道",
+        "checkpoint_variants": ["FL2VA", "Ref2VA"],
+        "license": "MiniMax H3 Community License"
+      }
+    },
+    {
+      "id": "minimax/MiniMax-M3",
+      "name": "MiniMax M3",
+      "developer": "minimax",
+      "developer_country": "CN",
+      "model_type": "chat",
+      "family": "MiniMax M3",
+      "description": "MiniMax 原生多模态开源模型，支持文本、图像和视频输入，面向长上下文、编程和智能体任务。",
+      "release_date": "2026-06-11",
+      "context_window": 1048576,
+      "max_output": null,
+      "input_modalities": ["text", "image", "video"],
+      "output_modalities": ["text"],
+      "reasoning": true,
+      "tool_call": true,
+      "structured_output": null,
+      "open_weights": true,
+      "source_url": "https://huggingface.co/MiniMaxAI/MiniMax-M3",
+      "weights_url": "https://huggingface.co/MiniMaxAI/MiniMax-M3",
+      "specs": {
+        "parameters_billion": 428,
+        "activated_parameters_billion": 23,
+        "license": "MiniMax Community License"
+      }
+    }
+  ]
+}

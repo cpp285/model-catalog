@@ -1,0 +1,85 @@
+{
+  "verified_at": "2026-08-22",
+  "sources": {
+    "text_embedding": "https://help.aliyun.com/zh/model-studio/text-embedding-synchronous-api",
+    "multimodal_embedding": "https://help.aliyun.com/zh/model-studio/multimodal-embedding-api-reference",
+    "rerank": "https://help.aliyun.com/zh/model-studio/text-rerank-api"
+  },
+  "models": {
+    "qwen3.7-text-embedding": {
+      "context_window": 128000,
+      "embedding_dimensions": [2560, 2048, 1536, 1024, 768, 512, 256],
+      "default_dimension": 1024,
+      "max_items": 20
+    },
+    "text-embedding-v4": {
+      "context_window": 8192,
+      "embedding_dimensions": [2048, 1536, 1024, 768, 512, 256, 128, 64],
+      "default_dimension": 1024,
+      "max_items": 10
+    },
+    "text-embedding-v3": {
+      "context_window": 8192,
+      "embedding_dimensions": [1024, 768, 512, 256, 128, 64],
+      "default_dimension": 1024,
+      "max_items": 10
+    },
+    "text-embedding-v2": {
+      "context_window": 2048,
+      "embedding_dimensions": [1536],
+      "default_dimension": 1536,
+      "max_items": 25
+    },
+    "text-embedding-v1": {
+      "context_window": 2048,
+      "embedding_dimensions": [1536],
+      "default_dimension": 1536,
+      "max_items": 25
+    },
+    "qwen3-vl-embedding": {
+      "context_window": 32000,
+      "embedding_dimensions": [2560, 2048, 1536, 1024, 768, 512, 256],
+      "default_dimension": 2560,
+      "max_items": 20
+    },
+    "qwen2.5-vl-embedding": {
+      "context_window": 32000,
+      "embedding_dimensions": [2048, 1024, 768, 512],
+      "default_dimension": 1024,
+      "max_items": 4
+    },
+    "tongyi-embedding-vision-plus": {
+      "context_window": 1024,
+      "embedding_dimensions": [1152],
+      "default_dimension": 1152
+    },
+    "tongyi-embedding-vision-flash": {
+      "context_window": 1024,
+      "embedding_dimensions": [768],
+      "default_dimension": 768
+    },
+    "multimodal-embedding-v1": {
+      "context_window": 512,
+      "embedding_dimensions": [1024],
+      "default_dimension": 1024,
+      "max_items": 20
+    },
+    "qwen3-vl-rerank": {
+      "context_window": 120000,
+      "max_item_tokens": 8000,
+      "max_documents": 100,
+      "max_images": 40,
+      "max_videos": 4
+    },
+    "qwen3-rerank": {
+      "context_window": 120000,
+      "max_item_tokens": 4000,
+      "max_documents": 500
+    },
+    "gte-rerank-v2": {
+      "context_window": 30000,
+      "max_item_tokens": 30000,
+      "max_documents": 500
+    }
+  }
+}

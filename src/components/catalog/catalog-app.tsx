@@ -11,7 +11,6 @@ import {
   Download,
   ExternalLink,
   Filter,
-  Layers3,
   LoaderCircle,
   PanelRightClose,
   RefreshCw,
@@ -22,12 +21,14 @@ import {
   Tag,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
+import { Workbench } from "@/components/catalog/workbench";
 import type {
   CatalogItem,
   CatalogPayload,
   CatalogView,
   PriceStatus,
+  SyncResult,
 } from "@/lib/catalog/types";
 
 const PAGE_SIZE = 50;
@@ -37,20 +38,22 @@ type SortKey =
   | "developer"
   | "contextWindow"
   | "inputPrice"
-  | "releaseDate"
-  | "offeringCount";
+  | "releaseDate";
 
 type FilterState = {
   search: string;
   developers: string[];
-  providers: string[];
-  sources: string[];
   countries: string[];
   priceStatuses: string[];
-  modalities: string[];
-  capabilities: string[];
-  matchStatuses: string[];
+  classifications: string[];
+  openness: string[];
   minContext: number;
+};
+
+type LegacyFilterState = Partial<FilterState> & {
+  modelTypes?: string[];
+  modalities?: string[];
+  capabilities?: string[];
 };
 
 type SavedView = {
@@ -63,23 +66,19 @@ type SavedView = {
 const EMPTY_FILTERS: FilterState = {
   search: "",
   developers: [],
-  providers: [],
-  sources: [],
   countries: [],
   priceStatuses: [],
-  modalities: [],
-  capabilities: [],
-  matchStatuses: [],
+  classifications: [],
+  openness: [],
   minContext: 0,
 };
 
-const CAPABILITIES = [
-  { value: "reasoning", label: "推理" },
-  { value: "toolCall", label: "工具调用" },
-  { value: "structuredOutput", label: "结构化输出" },
-  { value: "openWeights", label: "开源权重" },
-  { value: "officialApi", label: "官方 API" },
+const OPENNESS_OPTIONS = [
+  { value: "open", label: "开源（已确认开放权重）" },
+  { value: "closed", label: "闭源（当前未开放权重）" },
 ];
+
+const OPENNESS_VALUES = new Set(OPENNESS_OPTIONS.map((option) => option.value));
 
 const PRICE_STATUS_LABELS: Record<string, string> = {
   priced: "已公布",
@@ -87,21 +86,87 @@ const PRICE_STATUS_LABELS: Record<string, string> = {
   unknown: "未公布",
 };
 
+const LIFECYCLE_LABELS: Record<string, string> = {
+  current: "当前在售",
+  preview: "预览版",
+  retired: "已下架 / 不可调用",
+  superseded: "已被新版本替代",
+};
+
 const COUNTRY_LABELS: Record<string, string> = {
   CN: "中国",
   US: "美国",
 };
 
-const MATCH_LABELS: Record<string, string> = {
-  canonical: "底层模型",
-  manual: "人工确认",
-  exact: "精确匹配",
-  heuristic: "规则匹配",
-  unmatched: "待归并",
+const DEVELOPER_LABELS: Record<string, string> = {
+  alibaba: "阿里巴巴（Qwen / Wan）",
+  amazon: "Amazon（Nova / Titan）",
+  baai: "北京智源（BAAI / BGE）",
+  "bytedance-seed": "字节跳动（豆包）",
+  deepseek: "深度求索（DeepSeek）",
+  minimax: "MiniMax",
+  moonshotai: "月之暗面（Kimi）",
+  openai: "OpenAI",
+  voyage: "Voyage AI",
+  zhipuai: "智谱 AI（GLM）",
+  xiaomi: "小米（MiMo）",
+  stepfun: "阶跃星辰（Step）",
+  kuaishou: "快手（可灵 Kling）",
+  shengshu: "生数科技（Vidu）",
+  pixverse: "爱诗科技（PixVerse）",
+  tripo: "Tripo",
+  happyhorse: "HappyHorse",
+  hyper3d: "影眸科技（Hyper3D）",
+  hitem3d: "数美万物（Hitem3D）",
+};
+
+const MODEL_TYPE_LABELS: Record<string, string> = {
+  chat: "文本/多模态生成（LLM / VLM）",
+  image_generation: "图像生成（Image Generation）",
+  video_generation: "视频生成（Video Generation）",
+  three_d_generation: "3D 生成（3D Generation）",
+  audio_generation: "音频生成（Audio Generation）",
+  music_generation: "音乐生成（Music Generation）",
+  text_to_speech: "语音合成（TTS）",
+  speech_to_text: "语音识别（ASR）",
+  speech_to_speech: "语音对话（S2S）",
+  embedding: "文本向量（Embedding）",
+  multimodal_embedding: "多模态向量（Multimodal Embedding）",
+  rerank: "排序模型（Rerank）",
+  ocr: "文字识别（OCR）",
+  industry: "行业模型（Industry Model）",
+};
+
+const INPUT_MODALITY_LABELS: Record<string, string> = {
+  text: "文本输入（Text）",
+  image: "图像输入（Image）",
+  audio: "音频输入（Audio）",
+  video: "视频输入（Video）",
+  pdf: "PDF 输入（PDF）",
+};
+
+const PRICE_UNIT_LABELS: Record<string, string> = {
+  per_million_tokens: "/ 百万 Token",
+  per_ten_thousand_characters: "/ 万字符",
+  per_second: "/ 秒",
+  per_image: "/ 张",
+  per_request: "/ 次",
+  per_voice: "/ 个音色",
+  flexible: "（详见计费明细）",
+};
+
+const SPEC_LABELS: Record<string, string> = {
+  embedding_dimensions: "可选向量维度",
+  default_dimension: "默认向量维度",
+  max_items: "单次最大条数",
+  max_item_tokens: "单条最大 Token",
+  max_documents: "最大文档数",
+  max_images: "最大图片数",
+  max_videos: "最大视频数",
 };
 
 function formatCompact(value: number | null) {
-  if (value === null || value === undefined) return "—";
+  if (value === null || value === undefined || value <= 0) return "—";
   if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(value % 1_000_000 ? 1 : 0)}M`;
   if (value >= 1_000) return `${(value / 1_000).toFixed(value % 1_000 ? 1 : 0)}K`;
   return String(value);
@@ -111,13 +176,30 @@ function formatPrice(
   value: number | null,
   currency: "CNY" | "USD" | null,
   status: PriceStatus,
+  unit: string | null,
 ) {
   if (status === "free") return "免费";
-  if (status === "unknown" || value === null || value === undefined) return "未公布";
+  if (status === "unknown") return "未公布";
+  if (value === null || value === undefined) return "—";
   const symbol = currency === "CNY" ? "¥" : currency === "USD" ? "$" : "";
-  if (value < 0.01) return `${symbol}${value.toFixed(4)}`;
-  if (value < 1) return `${symbol}${value.toFixed(3)}`;
-  return `${symbol}${value.toFixed(2)}`;
+  const suffix = unit ? (PRICE_UNIT_LABELS[unit] ?? "") : "";
+  if (value < 0.01) return `${symbol}${value.toFixed(4)} ${suffix}`.trim();
+  if (value < 1) return `${symbol}${value.toFixed(3)} ${suffix}`.trim();
+  return `${symbol}${value.toFixed(2)} ${suffix}`.trim();
+}
+
+function pricingTierText(tier: Record<string, unknown>) {
+  if (Array.isArray(tier.values)) {
+    return tier.values.filter((value) => typeof value === "string").join(" · ");
+  }
+  return Object.values(tier)
+    .filter((value): value is string | number => ["string", "number"].includes(typeof value))
+    .join(" · ");
+}
+
+function formatSpec(value: unknown) {
+  if (Array.isArray(value)) return value.join("、");
+  return String(value ?? "—");
 }
 
 function formatDate(value: string | null) {
@@ -147,6 +229,36 @@ function uniqueSorted(items: Array<string | null | undefined>) {
   );
 }
 
+function normalizeFilters(value?: LegacyFilterState): FilterState {
+  const legacyClassifications = [
+    ...(value?.modelTypes ?? []).map((item) => `type:${item}`),
+    ...(value?.modalities ?? []).flatMap((item) =>
+      item === "embedding"
+        ? ["type:embedding", "type:multimodal_embedding"]
+        : item === "score"
+          ? ["type:rerank"]
+          : INPUT_MODALITY_LABELS[item]
+            ? [`modality:${item}`]
+            : [],
+    ),
+  ];
+
+  const legacyOpenness = value?.capabilities?.includes("openWeights") ? ["open"] : [];
+  const openness = (value?.openness ?? legacyOpenness)
+    .map((item) => (item === "openWeights" ? "open" : item))
+    .filter((item) => OPENNESS_VALUES.has(item));
+
+  return {
+    search: value?.search ?? "",
+    developers: value?.developers ?? [],
+    countries: value?.countries ?? [],
+    priceStatuses: value?.priceStatuses ?? [],
+    classifications: uniqueSorted(value?.classifications ?? legacyClassifications),
+    openness: uniqueSorted(openness),
+    minContext: value?.minContext ?? 0,
+  };
+}
+
 async function fetchCatalog(view: CatalogView) {
   const response = await fetch(`/api/catalog?view=${view}`, { cache: "no-store" });
   if (!response.ok) throw new Error(`读取失败（${response.status}）`);
@@ -168,7 +280,7 @@ function MultiFilter({
 }: {
   label: string;
   icon?: React.ReactNode;
-  options: Array<{ value: string; label: string }>;
+  options: Array<{ value: string; label: string; group?: string }>;
   selected: string[];
   onChange: (value: string[]) => void;
 }) {
@@ -191,18 +303,23 @@ function MultiFilter({
         </div>
         <div className="filter-options">
           {options.length ? (
-            options.map((option) => {
+            options.map((option, index) => {
               const checked = selected.includes(option.value);
               return (
-                <label key={option.value} className="filter-option">
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    onChange={() => onChange(toggleValue(selected, option.value))}
-                  />
-                  <span className="checkmark">{checked && <Check size={12} />}</span>
-                  <span title={option.label}>{option.label}</span>
-                </label>
+                <Fragment key={option.value}>
+                  {option.group && option.group !== options[index - 1]?.group && (
+                    <div className="filter-option-group">{option.group}</div>
+                  )}
+                  <label className="filter-option">
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => onChange(toggleValue(selected, option.value))}
+                    />
+                    <span className="checkmark">{checked && <Check size={12} />}</span>
+                    <span title={option.label}>{option.label}</span>
+                  </label>
+                </Fragment>
               );
             })
           ) : (
@@ -228,6 +345,13 @@ function BooleanMark({ value }: { value: boolean | null }) {
   );
 }
 
+function OpennessMark({ value }: { value: boolean | null }) {
+  if (value === true) {
+    return <span className="openness-mark is-open"><Check size={11} />开源</span>;
+  }
+  return <span className="openness-mark is-closed">闭源</span>;
+}
+
 function SourceBadge({ source }: { source: string }) {
   const label =
     source === "official-cn"
@@ -236,7 +360,19 @@ function SourceBadge({ source }: { source: string }) {
         ? "M.dev"
         : source === "openrouter"
           ? "OR"
-          : "Lite";
+          : source === "qianwen-catalog"
+            ? "千问目录"
+            : source === "qianwen-pricing"
+              ? "千问价"
+              : source === "official-us-media-live"
+                ? "US 官网"
+                : source === "volcengine-pricing"
+                  ? "方舟价"
+                  : source === "volcengine-ark"
+                    ? "方舟目录"
+              : source === "curated-official"
+                ? "官网"
+                : "目录";
   return <span className={`source-badge source-${source.replace(".", "-")}`}>{label}</span>;
 }
 
@@ -251,7 +387,8 @@ function LoadingState() {
 }
 
 export function CatalogApp() {
-  const [catalogView, setCatalogView] = useState<CatalogView>("models");
+  const catalogView: CatalogView = "models";
+  const [activeSection, setActiveSection] = useState<"models" | "workbench">("models");
   const [payload, setPayload] = useState<CatalogPayload | null>(null);
   const [filters, setFilters] = useState<FilterState>(EMPTY_FILTERS);
   const [sortKey, setSortKey] = useState<SortKey>("releaseDate");
@@ -260,9 +397,12 @@ export function CatalogApp() {
   const [selectedItem, setSelectedItem] = useState<CatalogItem | null>(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [savedViews, setSavedViews] = useState<SavedView[]>([]);
   const [showSources, setShowSources] = useState(false);
+  const [selectedModelIds, setSelectedModelIds] = useState<Set<string>>(new Set());
+  const [workbenchModels, setWorkbenchModels] = useState<CatalogItem[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -287,11 +427,40 @@ export function CatalogApp() {
     queueMicrotask(() => {
       try {
         const raw = localStorage.getItem("model-index-saved-views");
-        if (raw) setSavedViews(JSON.parse(raw) as SavedView[]);
+        if (raw) {
+          const parsed = JSON.parse(raw) as Array<Omit<SavedView, "filters"> & { filters?: LegacyFilterState }>;
+          setSavedViews(parsed.map((view) => ({ ...view, filters: normalizeFilters(view.filters) })));
+        }
       } catch {
         setSavedViews([]);
       }
     });
+  }, []);
+
+  useEffect(() => {
+    const closeFilterMenus = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      document
+        .querySelectorAll<HTMLDetailsElement>("details.filter-menu[open]")
+        .forEach((menu) => {
+          if (!menu.contains(target)) menu.open = false;
+        });
+    };
+    const closeFilterMenusWithEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      document
+        .querySelectorAll<HTMLDetailsElement>("details.filter-menu[open]")
+        .forEach((menu) => {
+          menu.open = false;
+        });
+    };
+    document.addEventListener("pointerdown", closeFilterMenus);
+    document.addEventListener("keydown", closeFilterMenusWithEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeFilterMenus);
+      document.removeEventListener("keydown", closeFilterMenusWithEscape);
+    };
   }, []);
 
   const updateFilters = (patch: Partial<FilterState>) => {
@@ -303,14 +472,22 @@ export function CatalogApp() {
     const items = payload?.items ?? [];
     return {
       developers: uniqueSorted(items.map((item) => item.developer)),
-      providers: uniqueSorted(items.map((item) => item.provider)),
-      sources: uniqueSorted(items.map((item) => item.source)),
       countries: uniqueSorted(items.map((item) => item.developerCountry)),
       priceStatuses: uniqueSorted(items.map((item) => item.priceStatus)),
-      modalities: uniqueSorted(
-        items.flatMap((item) => [...item.inputModalities, ...item.outputModalities]),
-      ),
-      matchStatuses: uniqueSorted(items.map((item) => item.matchStatus)),
+      classifications: [
+        ...uniqueSorted(items.map((item) => item.modelType)).map((value) => ({
+          value: `type:${value}`,
+          label: MODEL_TYPE_LABELS[value] ?? value,
+          group: "任务类型",
+        })),
+        ...uniqueSorted(items.flatMap((item) => item.inputModalities))
+          .filter((value) => Boolean(INPUT_MODALITY_LABELS[value]))
+          .map((value) => ({
+            value: `modality:${value}`,
+            label: INPUT_MODALITY_LABELS[value] ?? value,
+            group: "支持的输入模态",
+          })),
+      ],
     };
   }, [payload]);
 
@@ -324,6 +501,7 @@ export function CatalogApp() {
         item.family,
         item.provider,
         item.description,
+        item.modelType,
         ...item.tags,
       ]
         .filter(Boolean)
@@ -332,32 +510,31 @@ export function CatalogApp() {
 
       if (query && !searchable.includes(query)) return false;
       if (filters.developers.length && !filters.developers.includes(item.developer)) return false;
-      if (filters.providers.length && (!item.provider || !filters.providers.includes(item.provider))) return false;
-      if (filters.sources.length && !filters.sources.includes(item.source)) return false;
       if (
         filters.countries.length &&
         (!item.developerCountry || !filters.countries.includes(item.developerCountry))
       ) return false;
       if (filters.priceStatuses.length && !filters.priceStatuses.includes(item.priceStatus)) return false;
       if (
-        filters.modalities.length &&
-        !filters.modalities.some((modality) =>
-          [...item.inputModalities, ...item.outputModalities].includes(modality),
-        )
+        filters.classifications.length &&
+        !filters.classifications.some((classification) => {
+          const [kind, value] = classification.split(":", 2);
+          return kind === "type"
+            ? item.modelType === value
+            : kind === "modality"
+              ? item.inputModalities.includes(value)
+              : false;
+        })
       ) return false;
-      if (filters.matchStatuses.length && !filters.matchStatuses.includes(item.matchStatus)) return false;
       if (filters.minContext && (item.contextWindow ?? 0) < filters.minContext) return false;
       if (
-        filters.capabilities.some((capability) =>
-          capability === "reasoning"
-            ? !item.reasoning
-            : capability === "toolCall"
-              ? !item.toolCall
-            : capability === "structuredOutput"
-                ? !item.structuredOutput
-                : capability === "openWeights"
-                  ? !item.openWeights
-                  : !item.isOfficialApi,
+        filters.openness.length &&
+        !filters.openness.some((value) =>
+          value === "open"
+            ? item.openWeights === true
+            : value === "closed"
+              ? item.openWeights !== true
+              : false,
         )
       ) return false;
       return true;
@@ -381,13 +558,10 @@ export function CatalogApp() {
   const visibleItems = filteredItems.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
   const activeFilterCount =
     filters.developers.length +
-    filters.providers.length +
-    filters.sources.length +
     filters.countries.length +
     filters.priceStatuses.length +
-    filters.modalities.length +
-    filters.capabilities.length +
-    filters.matchStatuses.length +
+    filters.classifications.length +
+    filters.openness.length +
     Number(Boolean(filters.minContext));
 
   const changeSort = (next: SortKey) => {
@@ -399,21 +573,73 @@ export function CatalogApp() {
     }
   };
 
-  const handleViewChange = (next: CatalogView) => {
-    setCatalogView(next);
-    setFilters(EMPTY_FILTERS);
+  const toggleModelSelection = (item: CatalogItem) => {
+    setError(null);
+    setSelectedModelIds((current) => {
+      const next = new Set(current);
+      if (next.has(item.uid)) {
+        next.delete(item.uid);
+      } else if (next.size >= 12) {
+        setError("工作台单次最多比较 12 个模型，请先取消部分选择。");
+      } else {
+        next.add(item.uid);
+      }
+      return next;
+    });
+  };
+
+  const toggleVisibleModels = () => {
+    const selectable = visibleItems;
+    const areAllSelected = selectable.length > 0 && selectable.every((item) => selectedModelIds.has(item.uid));
+    setSelectedModelIds((current) => {
+      const next = new Set(current);
+      if (areAllSelected) {
+        selectable.forEach((item) => next.delete(item.uid));
+        return next;
+      }
+      for (const item of selectable) {
+        if (next.size >= 12) break;
+        next.add(item.uid);
+      }
+      if (next.size >= 12 && selectable.some((item) => !next.has(item.uid))) {
+        setError("已选择前 12 个模型；工作台单次最多比较 12 个。");
+      }
+      return next;
+    });
+  };
+
+  const importToWorkbench = () => {
+    if (!payload || selectedModelIds.size === 0) return;
+    const selected = payload.items.filter((item) => selectedModelIds.has(item.uid));
+    setWorkbenchModels(selected);
     setSelectedItem(null);
-    setPage(1);
+    setActiveSection("workbench");
+  };
+
+  const removeWorkbenchModel = (uid: string) => {
+    setWorkbenchModels((current) => current.filter((model) => model.uid !== uid));
+    setSelectedModelIds((current) => {
+      const next = new Set(current);
+      next.delete(uid);
+      return next;
+    });
   };
 
   const handleSync = async () => {
     setSyncing(true);
     setError(null);
+    setSyncResult(null);
     try {
       const response = await fetch("/api/sync", { method: "POST" });
-      const result = (await response.json()) as { error?: string };
+      const result = (await response.json()) as SyncResult & { error?: string };
       if (!response.ok) throw new Error(result.error ?? "同步失败");
-      setPayload(await fetchCatalog(catalogView));
+      const nextPayload = await fetchCatalog(catalogView);
+      setPayload(nextPayload);
+      setSyncResult(result);
+      setSortKey("releaseDate");
+      setSortDirection("desc");
+      setPage(1);
+      setSelectedItem(null);
     } catch (syncError) {
       setError(syncError instanceof Error ? syncError.message : "同步失败");
     } finally {
@@ -438,7 +664,6 @@ export function CatalogApp() {
   };
 
   const applySavedView = (view: SavedView) => {
-    setCatalogView(view.catalogView);
     setFilters({ ...EMPTY_FILTERS, ...view.filters });
     setPage(1);
   };
@@ -448,6 +673,7 @@ export function CatalogApp() {
       "name",
       "id",
       "developer",
+      "model_type",
       "provider",
       "family",
       "context_window",
@@ -455,6 +681,8 @@ export function CatalogApp() {
       "input_price_per_million",
       "output_price_per_million",
       "currency",
+      "price_unit",
+      "price_display",
       "price_status",
       "official_api",
       "price_source_url",
@@ -469,6 +697,7 @@ export function CatalogApp() {
         item.name,
         item.rawId,
         item.developer,
+        item.modelType,
         item.provider,
         item.family,
         item.contextWindow,
@@ -476,6 +705,8 @@ export function CatalogApp() {
         item.inputPrice,
         item.outputPrice,
         item.currency,
+        item.priceUnit,
+        item.priceDisplay,
         item.priceStatus,
         item.isOfficialApi,
         item.sourceUrl,
@@ -499,6 +730,9 @@ export function CatalogApp() {
   };
 
   const stats = payload?.stats;
+  const liveOfficialSources = (stats?.sources ?? []).filter((source) =>
+    source.id.endsWith("_live"),
+  );
 
   return (
     <div className="catalog-shell">
@@ -507,15 +741,27 @@ export function CatalogApp() {
           <span>M</span><i>/</i>
         </div>
         <nav className="side-nav" aria-label="主导航">
-          <button className="side-nav-item is-active" type="button" title="模型库">
+          <button
+            className={activeSection === "models" ? "side-nav-item is-active" : "side-nav-item"}
+            type="button"
+            title="模型库"
+            onClick={() => {
+              setSelectedItem(null);
+              setActiveSection("models");
+            }}
+          >
             <Database size={18} />
             <span>模型库</span>
           </button>
-          <button className="side-nav-item" type="button" disabled title="稍后开放">
-            <Layers3 size={18} />
-            <span>归并</span>
-          </button>
-          <button className="side-nav-item" type="button" disabled title="稍后开放">
+          <button
+            className={activeSection === "workbench" ? "side-nav-item is-active" : "side-nav-item"}
+            type="button"
+            title="模型对比工作台"
+            onClick={() => {
+              setSelectedItem(null);
+              setActiveSection("workbench");
+            }}
+          >
             <Sparkles size={18} />
             <span>工作台</span>
           </button>
@@ -529,22 +775,39 @@ export function CatalogApp() {
       <main className="catalog-main">
         <header className="catalog-header">
           <div>
-            <span className="eyebrow">AI MODEL INTELLIGENCE / 01</span>
-            <h1>模型索引</h1>
-            <p>将模型本身与调用渠道分开管理，保留每一条来源记录。</p>
+            <span className="eyebrow">
+              {activeSection === "models" ? "AI MODEL INTELLIGENCE / 01" : "MODEL EVALUATION / 02"}
+            </span>
+            <h1>{activeSection === "models" ? "模型索引" : "模型工作台"}</h1>
+            <p>
+              {activeSection === "models"
+                ? "面向模型选型的本地资料库：生成、向量、排序与多模态模型统一筛选。"
+                : "用同一套系统提示词和输入，并行比较多个模型的真实 API 输出。"}
+            </p>
           </div>
           <div className="header-actions">
-            <div className="sync-meta">
-              <span>最后同步</span>
-              <strong>{formatSyncTime(stats?.lastSyncAt ?? null)}</strong>
-            </div>
-            <button className="button button-source" type="button" onClick={() => setShowSources(true)}>
-              <ShieldCheck size={16} /> 厂商来源
-            </button>
-            <button className="button button-primary" type="button" onClick={handleSync} disabled={syncing}>
-              {syncing ? <LoaderCircle className="spin" size={16} /> : <RefreshCw size={16} />}
-              {syncing ? "正在同步" : "立即同步"}
-            </button>
+            {activeSection === "models" ? (
+              <>
+                <div className="sync-meta">
+                  <span>最后同步</span>
+                  <strong>{formatSyncTime(stats?.lastSyncAt ?? null)}</strong>
+                </div>
+                <button className="button button-source" type="button" onClick={() => setShowSources(true)}>
+                  <ShieldCheck size={16} /> 厂商来源
+                </button>
+                <button className="button button-primary" type="button" onClick={handleSync} disabled={syncing}>
+                  {syncing ? <LoaderCircle className="spin" size={16} /> : <RefreshCw size={16} />}
+                  {syncing ? "正在同步" : "立即同步"}
+                </button>
+              </>
+            ) : (
+              <>
+                <span className="workbench-header-count">{workbenchModels.length} 个模型</span>
+                <button className="button button-source" type="button" onClick={() => setActiveSection("models")}>
+                  <Database size={15} /> 返回模型库
+                </button>
+              </>
+            )}
           </div>
         </header>
 
@@ -556,51 +819,77 @@ export function CatalogApp() {
           </div>
         )}
 
+        {syncResult && (
+          <div className="sync-success-banner" role="status">
+            <Check size={16} />
+            <div>
+              <strong>同步完成，模型库已按发布时间从新到旧刷新。</strong>
+              <span>
+                新增 {syncResult.changes.newModels} · 重新上架 {syncResult.changes.reactivatedModels} ·
+                已下架模型 {syncResult.changes.retiredModels} · 停用调用记录 {syncResult.changes.retiredOfferings} ·
+                改价 {syncResult.changes.priceChanges} · 规格更新 {syncResult.changes.specChanges}
+              </span>
+            </div>
+            <button type="button" onClick={() => setSyncResult(null)} aria-label="关闭同步结果"><X size={15} /></button>
+          </div>
+        )}
+
+        <div className={activeSection === "models" ? "catalog-section" : "catalog-section is-hidden"}>
+        <section className="sync-policy" aria-label="立即同步规则">
+          <div className="sync-policy-heading">
+            <RefreshCw size={15} />
+            <div>
+              <strong>“立即同步”会真实更新什么</strong>
+              <span>只在来源成功读取后应用差异；官网失败时保留上次成功数据，不误判下架。</span>
+            </div>
+          </div>
+          <div className="sync-policy-item">
+            <b>01 · 新模型</b>
+            <span>保存发布日期；同步后回到第 1 页，并按发布时间从新到旧排列。</span>
+          </div>
+          <div className="sync-policy-item">
+            <b>02 · 改价 / 改规格</b>
+            <span>更新官网价格、计费单位、上下文等字段，同时把上一个价格版本留在本地历史。</span>
+          </div>
+          <div className="sync-policy-item">
+            <b>03 · 下架</b>
+            <span>停止使用失效调用记录；全来源均不再提供时，模型保留在库中并标记“已下架 / 不可调用”。</span>
+          </div>
+        </section>
         <section className="metric-strip" aria-label="数据概览">
           <div className="metric-card metric-emphasis">
             <span>底层模型</span>
             <strong>{stats?.canonicalModels.toLocaleString() ?? "—"}</strong>
-            <small>Models.dev 规范身份</small>
+            <small>在用 {stats?.activeModels ?? 0} · 已下架 {stats?.retiredModels ?? 0}</small>
           </div>
           <div className="metric-card">
-            <span>渠道记录</span>
-            <strong>{stats?.activeOfferings.toLocaleString() ?? "—"}</strong>
-            <small>聚合来源与官方记录全量保留</small>
+            <span>官方定价模型</span>
+            <strong>{stats?.officialPricedModels.toLocaleString() ?? "—"}</strong>
+            <small>按官网实际计费单位记录</small>
           </div>
           <div className="metric-card">
-            <span>服务商</span>
-            <strong>{stats?.providers.toLocaleString() ?? "—"}</strong>
-            <small>按渠道 ID 去重</small>
+            <span>Embedding</span>
+            <strong>{stats?.embeddingModels.toLocaleString() ?? "—"}</strong>
+            <small>文本与多模态向量模型</small>
+          </div>
+          <div className="metric-card">
+            <span>Rerank</span>
+            <strong>{stats?.rerankModels.toLocaleString() ?? "—"}</strong>
+            <small>独立排序模型</small>
           </div>
           <button className="metric-card metric-source" type="button" onClick={() => setShowSources(true)}>
             <span>中国厂商来源</span>
             <strong>{stats?.officialChinaSources.toLocaleString() ?? "—"}</strong>
             <small>已核价 {stats?.verifiedChinaSources ?? 0} 家 · 查看来源册</small>
           </button>
-          <div className="metric-card metric-warning">
-            <span>待归并</span>
-            <strong>{stats?.unmatchedOfferings.toLocaleString() ?? "—"}</strong>
-            <small>不确定的记录不自动合并</small>
-          </div>
         </section>
 
         <section className="catalog-workspace">
           <div className="workspace-topline">
-            <div className="view-switcher" role="tablist" aria-label="目录视图">
-              <button
-                type="button"
-                className={catalogView === "models" ? "is-active" : ""}
-                onClick={() => handleViewChange("models")}
-              >
-                底层模型 <span>{stats?.canonicalModels ?? 0}</span>
-              </button>
-              <button
-                type="button"
-                className={catalogView === "offerings" ? "is-active" : ""}
-                onClick={() => handleViewChange("offerings")}
-              >
-                渠道服务 <span>{stats?.activeOfferings ?? 0}</span>
-              </button>
+            <div className="workspace-title">
+              <span>MODEL LIBRARY</span>
+              <strong>全部模型</strong>
+              <b>{stats?.canonicalModels ?? 0}</b>
             </div>
             <div className="workspace-actions">
               {savedViews.length > 0 && (
@@ -610,7 +899,7 @@ export function CatalogApp() {
                     {savedViews.map((view) => (
                       <button key={view.id} type="button" onClick={() => applySavedView(view)}>
                         <span>{view.name}</span>
-                        <small>{view.catalogView === "models" ? "模型" : "渠道"}</small>
+                        <small>模型</small>
                       </button>
                     ))}
                   </div>
@@ -642,9 +931,19 @@ export function CatalogApp() {
             <div className="filter-divider" />
             <MultiFilter
               label="开发商"
-              options={facets.developers.map((value) => ({ value, label: value }))}
+              options={facets.developers.map((value) => ({
+                value,
+                label: DEVELOPER_LABELS[value] ?? value,
+              }))}
               selected={filters.developers}
               onChange={(developers) => updateFilters({ developers })}
+            />
+            <MultiFilter
+              label="模型分类"
+              icon={<SlidersHorizontal size={14} />}
+              options={facets.classifications}
+              selected={filters.classifications}
+              onChange={(classifications) => updateFilters({ classifications })}
             />
             <MultiFilter
               label="国家"
@@ -664,46 +963,12 @@ export function CatalogApp() {
               selected={filters.priceStatuses}
               onChange={(priceStatuses) => updateFilters({ priceStatuses })}
             />
-            {catalogView === "offerings" && (
-              <MultiFilter
-                label="服务渠道"
-                options={facets.providers.map((value) => ({ value, label: value }))}
-                selected={filters.providers}
-                onChange={(providers) => updateFilters({ providers })}
-              />
-            )}
             <MultiFilter
-              label="模态"
-              icon={<SlidersHorizontal size={14} />}
-              options={facets.modalities.map((value) => ({ value, label: value }))}
-              selected={filters.modalities}
-              onChange={(modalities) => updateFilters({ modalities })}
+              label="开源情况"
+              options={OPENNESS_OPTIONS}
+              selected={filters.openness}
+              onChange={(openness) => updateFilters({ openness })}
             />
-            <MultiFilter
-              label="能力"
-              options={CAPABILITIES}
-              selected={filters.capabilities}
-              onChange={(capabilities) => updateFilters({ capabilities })}
-            />
-            {catalogView === "offerings" && (
-              <>
-                <MultiFilter
-                  label="数据来源"
-                  options={facets.sources.map((value) => ({ value, label: value }))}
-                  selected={filters.sources}
-                  onChange={(sources) => updateFilters({ sources })}
-                />
-                <MultiFilter
-                  label="归并状态"
-                  options={facets.matchStatuses.map((value) => ({
-                    value,
-                    label: MATCH_LABELS[value] ?? value,
-                  }))}
-                  selected={filters.matchStatuses}
-                  onChange={(matchStatuses) => updateFilters({ matchStatuses })}
-                />
-              </>
-            )}
             <details className="filter-menu">
               <summary className={filters.minContext ? "filter-trigger is-active" : "filter-trigger"}>
                 <span>上下文</span>
@@ -739,7 +1004,7 @@ export function CatalogApp() {
 
           <div className="result-bar">
             <span><Filter size={14} /> 筛选结果 <strong>{filteredItems.length.toLocaleString()}</strong></span>
-            <span>价格：中美厂商 API 原币价 / 1M tokens · 人民币不做汇率换算</span>
+            <span>价格按官网实际单位展示：Token、秒、张、次、字符等 · 人民币不做汇率换算</span>
           </div>
 
           {loading ? (
@@ -749,14 +1014,27 @@ export function CatalogApp() {
               <table className="catalog-table">
                 <thead>
                   <tr>
+                    <th className="sticky-column selection-cell">
+                      <label className="row-selector select-all-selector" title="选择本页模型">
+                        <input
+                          type="checkbox"
+                          checked={
+                            visibleItems.length > 0 &&
+                            visibleItems.every((item) => selectedModelIds.has(item.uid))
+                          }
+                          onChange={toggleVisibleModels}
+                          aria-label="选择本页模型"
+                        />
+                        <span>{visibleItems.some((item) => selectedModelIds.has(item.uid)) && <Check size={12} />}</span>
+                      </label>
+                    </th>
                     <th className="sticky-column row-number">#</th>
                     <th className="sticky-column model-column">
                       <button type="button" onClick={() => changeSort("name")}>
                         模型 <SortIcon active={sortKey === "name"} direction={sortDirection} />
                       </button>
                     </th>
-                    {catalogView === "offerings" && <th>渠道</th>}
-                    <th>输入 / 输出</th>
+                    <th>类型 / 模态</th>
                     <th>
                       <button type="button" onClick={() => changeSort("contextWindow")}>
                         上下文 <SortIcon active={sortKey === "contextWindow"} direction={sortDirection} />
@@ -767,19 +1045,11 @@ export function CatalogApp() {
                         输入价 <SortIcon active={sortKey === "inputPrice"} direction={sortDirection} />
                       </button>
                     </th>
-                    <th>输出价</th>
+                    <th>输出 / 调用价</th>
                     <th className="center">推理</th>
                     <th className="center">工具</th>
-                    <th className="center">开源</th>
-                    {catalogView === "models" ? (
-                      <th>
-                        <button type="button" onClick={() => changeSort("offeringCount")}>
-                          渠道数 <SortIcon active={sortKey === "offeringCount"} direction={sortDirection} />
-                        </button>
-                      </th>
-                    ) : (
-                      <th>归并</th>
-                    )}
+                    <th className="center">开放性</th>
+                    <th>价格来源</th>
                     <th>
                       <button type="button" onClick={() => changeSort("releaseDate")}>
                         发布 <SortIcon active={sortKey === "releaseDate"} direction={sortDirection} />
@@ -790,57 +1060,69 @@ export function CatalogApp() {
                 <tbody>
                   {visibleItems.map((item, index) => (
                     <tr key={item.uid} onClick={() => setSelectedItem(item)}>
+                      <td className="sticky-column selection-cell" onClick={(event) => event.stopPropagation()}>
+                        <label
+                          className="row-selector"
+                          title={`选择 ${item.name}`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedModelIds.has(item.uid)}
+                            onChange={() => toggleModelSelection(item)}
+                            aria-label={`选择 ${item.name}`}
+                          />
+                          <span>{selectedModelIds.has(item.uid) && <Check size={12} />}</span>
+                        </label>
+                      </td>
                       <td className="sticky-column row-number">{(safePage - 1) * PAGE_SIZE + index + 1}</td>
                       <td className="sticky-column model-column">
                         <div className="model-cell">
                           <div className="model-avatar">{item.developer.slice(0, 2).toUpperCase()}</div>
                           <div>
-                            <strong>{item.name}</strong>
+                            <div className="model-name-line">
+                              <strong>{item.name}</strong>
+                              {!item.callable && <b className="retired-pill">已下架</b>}
+                            </div>
                             <span>{item.rawId}</span>
                           </div>
                         </div>
                       </td>
-                      {catalogView === "offerings" && (
-                        <td>
-                          <div className="provider-cell">
-                            <SourceBadge source={item.source} />
-                            <span>{item.provider}</span>
-                            {item.isOfficialApi && <span className="official-pill">官方</span>}
-                          </div>
-                        </td>
-                      )}
                       <td>
-                        <div className="modality-pair">
-                          <span>{item.inputModalities.join(" + ") || "—"}</span>
-                          <i>→</i>
-                          <span>{item.outputModalities.join(" + ") || "—"}</span>
+                        <div className="type-modality-cell">
+                          <span className={`model-type-pill type-${item.modelType}`}>
+                            {MODEL_TYPE_LABELS[item.modelType] ?? item.modelType}
+                          </span>
+                          <div className="modality-pair">
+                            <span>{item.inputModalities.join(" + ") || "—"}</span>
+                            <i>→</i>
+                            <span>{item.outputModalities.join(" + ") || "—"}</span>
+                          </div>
                         </div>
                       </td>
                       <td className="number-cell">{formatCompact(item.contextWindow)}</td>
                       <td className="number-cell price-cell">
-                        {formatPrice(item.inputPrice, item.currency, item.priceStatus)}
+                        {formatPrice(item.inputPrice, item.currency, item.priceStatus, item.priceUnit)}
                       </td>
                       <td className="number-cell price-cell">
-                        {formatPrice(item.outputPrice, item.currency, item.priceStatus)}
+                        {item.priceDisplay || formatPrice(item.outputPrice, item.currency, item.priceStatus, item.priceUnit)}
                       </td>
                       <td className="center"><BooleanMark value={item.reasoning} /></td>
                       <td className="center"><BooleanMark value={item.toolCall} /></td>
-                      <td className="center"><BooleanMark value={item.openWeights} /></td>
-                      {catalogView === "models" ? (
-                        <td><span className="count-pill">{item.offeringCount}</span></td>
-                      ) : (
-                        <td>
-                          <span className={`match-pill match-${item.matchStatus}`}>
-                            {MATCH_LABELS[item.matchStatus] ?? item.matchStatus}
-                          </span>
-                        </td>
-                      )}
+                      <td className="center"><OpennessMark value={item.openWeights} /></td>
+                      <td>
+                        <div className="provider-cell">
+                          <SourceBadge source={item.source} />
+                          <span>{item.provider || "暂未核价"}</span>
+                          {item.isOfficialApi && <span className="official-pill">官方</span>}
+                          {!item.callable && item.inputPrice !== null && <span className="history-pill">历史价</span>}
+                        </div>
+                      </td>
                       <td className="date-cell">{formatDate(item.releaseDate)}</td>
                     </tr>
                   ))}
                   {!visibleItems.length && (
                     <tr>
-                      <td colSpan={catalogView === "models" ? 11 : 12}>
+                      <td colSpan={12}>
                         <div className="no-results">
                           <Search size={24} />
                           <strong>没有找到符合条件的记录</strong>
@@ -865,10 +1147,34 @@ export function CatalogApp() {
           </footer>
         </section>
 
+        {selectedModelIds.size > 0 && (
+          <div className="selection-tray" role="status">
+            <div>
+              <span>已选择</span>
+              <strong>{selectedModelIds.size}</strong>
+              <small>可混选不同类型 · 工作台内按评测类型切换</small>
+            </div>
+            <button type="button" className="button button-quiet" onClick={() => setSelectedModelIds(new Set())}>
+              <X size={14} /> 清空选择
+            </button>
+            <button type="button" className="button button-primary" onClick={importToWorkbench}>
+              <Sparkles size={15} /> 一键导入工作台
+            </button>
+          </div>
+        )}
+
         <footer className="page-footer">
           <span>MODEL INDEX · LOCAL DATA WORKBENCH</span>
           <span>原始数据与人工标签隔离保存</span>
         </footer>
+        </div>
+        <div className={activeSection === "workbench" ? "workbench-section" : "workbench-section is-hidden"}>
+          <Workbench
+            models={workbenchModels}
+            onBack={() => setActiveSection("models")}
+            onRemove={removeWorkbenchModel}
+          />
+        </div>
       </main>
 
       {showSources && (
@@ -891,6 +1197,39 @@ export function CatalogApp() {
             <p className="source-intro">
               只把中国大陆官方页面公开的 API 按量价写入人民币价格；没有公开价的厂商保留来源和状态，不用第三方美元价补位。
             </p>
+            {liveOfficialSources.length > 0 && (
+              <section className="live-source-overview" aria-label="官网实时价格同步状态">
+                <div className="live-source-heading">
+                  <div>
+                    <strong>本次官网价格同步</strong>
+                    <span>每次点击“立即同步”都会重新读取这四家官网</span>
+                  </div>
+                  <RefreshCw size={15} />
+                </div>
+                <div className="live-source-grid">
+                  {liveOfficialSources.map((source) => (
+                    <article
+                      key={source.id}
+                      className={`live-source-card is-${source.status}`}
+                      title={source.error ?? undefined}
+                    >
+                      <div>
+                        <strong>{source.name.replace("官网实时价格", "")}</strong>
+                        <span>{formatSyncTime(source.lastSyncedAt)}</span>
+                      </div>
+                      <b>{source.status === "ok" ? "官网实时" : source.status === "error" ? "快照兜底" : "尚未同步"}</b>
+                      <small>
+                        {source.status === "ok"
+                          ? `读取 ${source.recordCount} 条价格`
+                          : source.status === "error"
+                            ? `保留 ${source.recordCount} 条本地价格 · ${source.error ?? "官网暂时不可读"}`
+                            : "等待第一次同步"}
+                      </small>
+                    </article>
+                  ))}
+                </div>
+              </section>
+            )}
             <div className="source-registry-list">
               {(payload?.providerSources ?? []).map((provider) => (
                 <article key={provider.id} className="source-registry-item">
@@ -931,7 +1270,7 @@ export function CatalogApp() {
           <aside className="detail-panel" onMouseDown={(event) => event.stopPropagation()} aria-label="模型详情">
             <div className="detail-head">
               <div>
-                <span className="eyebrow">{selectedItem.view === "models" ? "MODEL RECORD" : "OFFERING RECORD"}</span>
+                <span className="eyebrow">MODEL RECORD</span>
                 <h2>{selectedItem.name}</h2>
                 <code>{selectedItem.rawId}</code>
               </div>
@@ -944,16 +1283,20 @@ export function CatalogApp() {
               {selectedItem.tags.map((tag) => <span key={tag}><Tag size={11} />{tag}</span>)}
             </div>
             <div className="detail-grid">
-              <div><span>开发商</span><strong>{selectedItem.developer}</strong></div>
+              <div><span>开发商</span><strong>{DEVELOPER_LABELS[selectedItem.developer] ?? selectedItem.developer}</strong></div>
               <div><span>家族</span><strong>{selectedItem.family || "—"}</strong></div>
+              <div><span>模型类型</span><strong>{MODEL_TYPE_LABELS[selectedItem.modelType] ?? selectedItem.modelType}</strong></div>
+              <div><span>计费单位</span><strong>{selectedItem.priceUnit ? (PRICE_UNIT_LABELS[selectedItem.priceUnit] ?? selectedItem.priceUnit) : "—"}</strong></div>
               <div><span>上下文</span><strong>{formatCompact(selectedItem.contextWindow)}</strong></div>
               <div><span>最大输出</span><strong>{formatCompact(selectedItem.maxOutput)}</strong></div>
-              <div><span>输入价 / 1M</span><strong>{formatPrice(selectedItem.inputPrice, selectedItem.currency, selectedItem.priceStatus)}</strong></div>
-              <div><span>输出价 / 1M</span><strong>{formatPrice(selectedItem.outputPrice, selectedItem.currency, selectedItem.priceStatus)}</strong></div>
-              <div><span>渠道</span><strong>{selectedItem.provider || `${selectedItem.offeringCount} 个渠道`}</strong></div>
+              <div><span>输入价</span><strong>{formatPrice(selectedItem.inputPrice, selectedItem.currency, selectedItem.priceStatus, selectedItem.priceUnit)}</strong></div>
+              <div><span>输出 / 调用价</span><strong>{selectedItem.priceDisplay || formatPrice(selectedItem.outputPrice, selectedItem.currency, selectedItem.priceStatus, selectedItem.priceUnit)}</strong></div>
+              <div><span>计费摘要</span><strong>{selectedItem.priceDisplay || "—"}</strong></div>
               <div><span>数据来源</span><strong>{selectedItem.source}</strong></div>
-              <div><span>价格状态</span><strong>{PRICE_STATUS_LABELS[selectedItem.priceStatus] ?? selectedItem.priceStatus}</strong></div>
+              <div><span>价格状态</span><strong>{selectedItem.callable ? (PRICE_STATUS_LABELS[selectedItem.priceStatus] ?? selectedItem.priceStatus) : "下架前最后记录"}</strong></div>
               <div><span>核验日期</span><strong>{selectedItem.verifiedAt || "—"}</strong></div>
+              <div><span>产品状态</span><strong>{LIFECYCLE_LABELS[selectedItem.lifecycleStatus] ?? selectedItem.lifecycleStatus}</strong></div>
+              <div><span>归并版本</span><strong>{selectedItem.versionCount > 1 ? `${selectedItem.versionCount} 个来源版本` : "单一记录"}</strong></div>
             </div>
             {(selectedItem.priceNote || selectedItem.sourceUrl) && (
               <div className="price-evidence">
@@ -966,19 +1309,48 @@ export function CatalogApp() {
                 )}
               </div>
             )}
+            {selectedItem.pricingTiers.length > 0 && (
+              <div className="pricing-detail">
+                <span>官网计费明细</span>
+                <div>
+                  {selectedItem.pricingTiers.slice(0, 12).map((tier, index) => (
+                    <p key={`${selectedItem.uid}-tier-${index}`}>{pricingTierText(tier)}</p>
+                  ))}
+                </div>
+              </div>
+            )}
+            {Object.keys(selectedItem.specs).length > 0 && (
+              <div className="spec-detail">
+                <span>模型规格</span>
+                <dl>
+                  {Object.entries(selectedItem.specs)
+                    .filter(([key]) => key !== "context_window")
+                    .map(([key, value]) => (
+                      <div key={key}>
+                        <dt>{SPEC_LABELS[key] ?? key}</dt>
+                        <dd>{formatSpec(value)}</dd>
+                      </div>
+                    ))}
+                </dl>
+              </div>
+            )}
+            {selectedItem.opennessBasis && (
+              <div className="price-evidence">
+                <span>开源 / 闭源核验依据</span>
+                <p>{selectedItem.opennessBasis}</p>
+                {selectedItem.opennessSourceUrl && (
+                  <a href={selectedItem.opennessSourceUrl} target="_blank" rel="noreferrer">
+                    打开权重来源 <ExternalLink size={13} />
+                  </a>
+                )}
+              </div>
+            )}
             <div className="capability-list">
               <div><BooleanMark value={selectedItem.reasoning} /><span>推理能力</span></div>
               <div><BooleanMark value={selectedItem.toolCall} /><span>工具调用</span></div>
               <div><BooleanMark value={selectedItem.structuredOutput} /><span>结构化输出</span></div>
-              <div><BooleanMark value={selectedItem.openWeights} /><span>开源权重</span></div>
+              <div><OpennessMark value={selectedItem.openWeights} /><span>模型开放性</span></div>
             </div>
-            {selectedItem.view === "offerings" && (
-              <div className="mapping-note">
-                <span>归并状态</span>
-                <strong>{MATCH_LABELS[selectedItem.matchStatus] ?? selectedItem.matchStatus}</strong>
-                <p>{selectedItem.canonicalId ? `已关联到 ${selectedItem.canonicalId}` : "暂未找到足够可信的底层模型，原始记录已完整保留。"}</p>
-              </div>
-            )}
           </aside>
         </div>
       )}

@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "catalog:sync": "tsx scripts/sync-catalog.ts",
-    "catalog:stats": "tsx scripts/catalog-stats.ts"
+    "catalog:stats": "tsx scripts/catalog-stats.ts",
+    "catalog:audit": "tsx scripts/catalog-audit.ts"
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",
