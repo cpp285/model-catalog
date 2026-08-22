@@ -738,7 +738,7 @@ export function CatalogApp() {
     <div className="catalog-shell">
       <aside className="sidebar">
         <div className="brand-mark" aria-label="Model Index">
-          <span>M</span><i>/</i>
+          <span>M</span><i>/</i><strong>Model Index</strong>
         </div>
         <nav className="side-nav" aria-label="主导航">
           <button
