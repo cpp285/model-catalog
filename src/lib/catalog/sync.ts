@@ -562,9 +562,6 @@ function createMatcher() {
 function upsertCanonicalModels(payload: unknown, now: string) {
   const database = getDatabase();
   const records = object(payload);
-  database
-    .prepare("UPDATE canonical_models SET active = 0 WHERE source = 'models.dev'")
-    .run();
 
   const statement = database.prepare(`
     INSERT INTO canonical_models (
@@ -578,30 +575,7 @@ function upsertCanonicalModels(payload: unknown, now: string) {
       @reasoning, @toolCall, @structuredOutput, @attachment, @openWeights,
       @benchmarks, @weights, '{}', 'models.dev', @raw, 1, @now, @now
     )
-    ON CONFLICT(id) DO UPDATE SET
-      name = excluded.name,
-      developer = excluded.developer,
-      developer_country = excluded.developer_country,
-      model_type = excluded.model_type,
-      family = excluded.family,
-      description = excluded.description,
-      release_date = excluded.release_date,
-      knowledge_cutoff = excluded.knowledge_cutoff,
-      last_updated = excluded.last_updated,
-      context_window = excluded.context_window,
-      max_output = excluded.max_output,
-      input_modalities = excluded.input_modalities,
-      output_modalities = excluded.output_modalities,
-      reasoning = excluded.reasoning,
-      tool_call = excluded.tool_call,
-      structured_output = excluded.structured_output,
-      attachment = excluded.attachment,
-      open_weights = excluded.open_weights,
-      benchmarks_json = excluded.benchmarks_json,
-      weights_json = excluded.weights_json,
-      raw_json = excluded.raw_json,
-      active = 1,
-      updated_at = excluded.updated_at
+    ON CONFLICT(id) DO NOTHING
   `);
 
   for (const [key, rawValue] of Object.entries(records)) {
@@ -797,8 +771,8 @@ function preferredJson(rows: CanonicalProductRow[], key: "benchmarks_json" | "we
 
 /**
  * Canonical rows keep source versions for traceability, while the library exposes
- * exactly one current product row. A stable API id wins identity; official/direct
- * metadata wins content for Chinese models.
+ * exactly one current product row. Existing local fields are the source of truth;
+ * other source rows may only fill gaps on the selected current record.
  */
 function applyCanonicalProductNormalization(now: string, previouslyActiveProducts: Set<string>) {
   const database = getDatabase();
@@ -831,28 +805,34 @@ function applyCanonicalProductNormalization(now: string, previouslyActiveProduct
   `);
   const mergeCurrent = database.prepare(`
     UPDATE canonical_models SET
-      name = @name,
-      developer_country = COALESCE(@developerCountry, developer_country),
-      model_type = @modelType,
-      family = COALESCE(@family, family),
-      description = COALESCE(@description, description),
-      release_date = COALESCE(@releaseDate, release_date),
-      knowledge_cutoff = COALESCE(@knowledgeCutoff, knowledge_cutoff),
-      last_updated = COALESCE(@lastUpdated, last_updated),
-      context_window = COALESCE(@contextWindow, context_window),
-      max_output = COALESCE(@maxOutput, max_output),
-      input_modalities = @inputModalities,
-      output_modalities = @outputModalities,
-      reasoning = @reasoning,
-      tool_call = @toolCall,
-      structured_output = @structuredOutput,
-      attachment = @attachment,
-      open_weights = @openWeights,
-      benchmarks_json = @benchmarks,
-      weights_json = @weights,
-      specs_json = @specs,
-      source = @source,
-      raw_json = @raw,
+      developer_country = COALESCE(developer_country, @developerCountry),
+      model_type = CASE WHEN model_type = 'unknown' THEN @modelType ELSE model_type END,
+      family = COALESCE(family, @family),
+      description = COALESCE(description, @description),
+      release_date = COALESCE(release_date, @releaseDate),
+      knowledge_cutoff = COALESCE(knowledge_cutoff, @knowledgeCutoff),
+      last_updated = COALESCE(last_updated, @lastUpdated),
+      context_window = COALESCE(context_window, @contextWindow),
+      max_output = COALESCE(max_output, @maxOutput),
+      input_modalities = CASE
+        WHEN input_modalities = '[]' THEN @inputModalities
+        ELSE input_modalities
+      END,
+      output_modalities = CASE
+        WHEN output_modalities = '[]' THEN @outputModalities
+        ELSE output_modalities
+      END,
+      reasoning = COALESCE(reasoning, @reasoning),
+      tool_call = COALESCE(tool_call, @toolCall),
+      structured_output = COALESCE(structured_output, @structuredOutput),
+      attachment = COALESCE(attachment, @attachment),
+      open_weights = COALESCE(open_weights, @openWeights),
+      benchmarks_json = CASE
+        WHEN benchmarks_json = '[]' THEN @benchmarks
+        ELSE benchmarks_json
+      END,
+      weights_json = CASE WHEN weights_json = '[]' THEN @weights ELSE weights_json END,
+      specs_json = CASE WHEN specs_json = '{}' THEN @specs ELSE specs_json END,
       updated_at = @now
     WHERE id = @id
   `);
@@ -927,7 +907,6 @@ function applyCanonicalProductNormalization(now: string, previouslyActiveProduct
 
     mergeCurrent.run({
       id: current.id,
-      name: preferred.name,
       developerCountry: preferred.developer_country,
       modelType: preferred.model_type,
       family: metadataRows.find((row) => row.family)?.family ?? null,
@@ -947,8 +926,6 @@ function applyCanonicalProductNormalization(now: string, previouslyActiveProduct
       benchmarks: preferredJson(metadataRows, "benchmarks_json"),
       weights: preferredJson(metadataRows, "weights_json"),
       specs: preferredJson(metadataRows, "specs_json"),
-      source: preferred.source,
-      raw: preferred.raw_json,
       now,
     });
     currentProducts += 1;
@@ -1279,54 +1256,40 @@ function catalogCanonicalStatement() {
       @source, @raw, 1, @now, @now
     )
     ON CONFLICT(id) DO UPDATE SET
-      name = CASE
-        WHEN canonical_models.source IN ('qianwen-catalog', 'volcengine-ark') THEN excluded.name
-        ELSE canonical_models.name
-      END,
-      developer = excluded.developer,
-      developer_country = COALESCE(excluded.developer_country, canonical_models.developer_country),
+      developer_country = COALESCE(canonical_models.developer_country, excluded.developer_country),
       model_type = CASE
-        WHEN canonical_models.source IN ('qianwen-catalog', 'volcengine-ark')
-          OR (canonical_models.model_type = 'chat' AND excluded.model_type <> 'chat')
+        WHEN canonical_models.model_type = 'unknown'
           THEN excluded.model_type
         ELSE canonical_models.model_type
       END,
       family = COALESCE(canonical_models.family, excluded.family),
       description = COALESCE(canonical_models.description, excluded.description),
       release_date = COALESCE(canonical_models.release_date, excluded.release_date),
-      last_updated = COALESCE(excluded.last_updated, canonical_models.last_updated),
+      last_updated = COALESCE(canonical_models.last_updated, excluded.last_updated),
       context_window = COALESCE(canonical_models.context_window, excluded.context_window),
       max_output = COALESCE(canonical_models.max_output, excluded.max_output),
       input_modalities = CASE
-        WHEN canonical_models.source IN ('qianwen-catalog', 'volcengine-ark')
-          OR canonical_models.input_modalities = '[]'
-          OR (canonical_models.model_type = 'chat' AND excluded.model_type <> 'chat')
+        WHEN canonical_models.input_modalities = '[]'
           THEN excluded.input_modalities
         ELSE canonical_models.input_modalities
       END,
       output_modalities = CASE
-        WHEN canonical_models.source IN ('qianwen-catalog', 'volcengine-ark')
-          OR canonical_models.output_modalities = '[]'
-          OR (canonical_models.model_type = 'chat' AND excluded.model_type <> 'chat')
+        WHEN canonical_models.output_modalities = '[]'
           THEN excluded.output_modalities
         ELSE canonical_models.output_modalities
       END,
-      reasoning = CASE WHEN excluded.reasoning = 1 THEN 1 ELSE COALESCE(canonical_models.reasoning, excluded.reasoning) END,
-      tool_call = CASE WHEN excluded.tool_call = 1 THEN 1 ELSE COALESCE(canonical_models.tool_call, excluded.tool_call) END,
-      structured_output = CASE WHEN excluded.structured_output = 1 THEN 1 ELSE COALESCE(canonical_models.structured_output, excluded.structured_output) END,
-      open_weights = CASE
-        WHEN canonical_models.source IN ('qianwen-catalog', 'volcengine-ark')
-          THEN excluded.open_weights
-        WHEN excluded.open_weights = 1 THEN 1
-        ELSE COALESCE(canonical_models.open_weights, excluded.open_weights)
+      reasoning = COALESCE(canonical_models.reasoning, excluded.reasoning),
+      tool_call = COALESCE(canonical_models.tool_call, excluded.tool_call),
+      structured_output = COALESCE(canonical_models.structured_output, excluded.structured_output),
+      open_weights = COALESCE(canonical_models.open_weights, excluded.open_weights),
+      weights_json = CASE
+        WHEN canonical_models.weights_json = '[]' THEN excluded.weights_json
+        ELSE canonical_models.weights_json
       END,
-      weights_json = CASE WHEN excluded.weights_json <> '[]' THEN excluded.weights_json ELSE canonical_models.weights_json END,
-      specs_json = CASE WHEN excluded.specs_json <> '{}' THEN excluded.specs_json ELSE canonical_models.specs_json END,
-      raw_json = CASE
-        WHEN canonical_models.source IN ('qianwen-catalog', 'volcengine-ark') THEN excluded.raw_json
-        ELSE canonical_models.raw_json
+      specs_json = CASE
+        WHEN canonical_models.specs_json = '{}' THEN excluded.specs_json
+        ELSE canonical_models.specs_json
       END,
-      active = 1,
       updated_at = excluded.updated_at
   `);
 }
@@ -1354,7 +1317,6 @@ function catalogEntryStatement() {
 
 function upsertQianwenCatalog(payload: unknown, now: string) {
   const database = getDatabase();
-  database.prepare("UPDATE canonical_models SET active = 0 WHERE source = 'qianwen-catalog'").run();
   database.prepare("UPDATE model_catalog_entries SET active = 0 WHERE source = 'qianwen-catalog'").run();
   const writeModel = catalogCanonicalStatement();
   const writeEntry = catalogEntryStatement();
@@ -1439,7 +1401,6 @@ function upsertQianwenCatalog(payload: unknown, now: string) {
 
 function upsertVolcengineArkCatalog(payload: unknown, now: string) {
   const database = getDatabase();
-  database.prepare("UPDATE canonical_models SET active = 0 WHERE source = 'volcengine-ark'").run();
   database.prepare("UPDATE model_catalog_entries SET active = 0 WHERE source = 'volcengine-ark'").run();
   const writeModel = catalogCanonicalStatement();
   const writeEntry = catalogEntryStatement();
@@ -1802,6 +1763,72 @@ function deactivateOfferings(source: string, now: string) {
     .run({ source, date: now.slice(0, 10), now });
 }
 
+function applyConfirmedOfficialRetirements(now: string) {
+  const database = getDatabase();
+  const date = now.slice(0, 10);
+  database.prepare(`
+    UPDATE offerings
+    SET
+      active = 0,
+      status = 'retired',
+      updated_at = @now
+    WHERE active = 1
+      AND deprecation_date IS NOT NULL
+      AND deprecation_date <= @date
+      AND (
+        source IN ('official-cn', 'official-us-media-live')
+        OR (
+          source = 'volcengine-pricing'
+          AND canonical_model_id IN (
+            SELECT id FROM canonical_models WHERE developer = 'bytedance-seed'
+          )
+        )
+      )
+  `).run({ date, now });
+
+  return database.prepare(`
+    UPDATE canonical_models
+    SET
+      active = 0,
+      lifecycle_status = 'retired',
+      retired_at = COALESCE(retired_at, @now),
+      callable = 0,
+      updated_at = @now
+    WHERE id IN (
+      SELECT DISTINCT retired.canonical_model_id
+      FROM offerings retired
+      WHERE retired.canonical_model_id IS NOT NULL
+        AND retired.active = 0
+        AND retired.deprecation_date IS NOT NULL
+        AND retired.deprecation_date <= @date
+        AND (
+          retired.source IN ('official-cn', 'official-us-media-live')
+          OR (
+            retired.source = 'volcengine-pricing'
+            AND retired.canonical_model_id IN (
+              SELECT id FROM canonical_models WHERE developer = 'bytedance-seed'
+            )
+          )
+        )
+        AND NOT EXISTS (
+          SELECT 1
+          FROM offerings current
+          WHERE current.canonical_model_id = retired.canonical_model_id
+            AND current.active = 1
+            AND (
+              current.source IN ('official-cn', 'official-us-media-live')
+              OR (
+                current.source = 'volcengine-pricing'
+                AND retired.canonical_model_id IN (
+                  SELECT id FROM canonical_models WHERE developer = 'bytedance-seed'
+                )
+              )
+            )
+        )
+    )
+  `).run({ date, now }).changes;
+}
+
 type QianwenPriceRow = {
   type: string;
   name: string;
@@ -2063,10 +2090,16 @@ function upsertVolcenginePricingOfferings(
   `);
   const updateCanonical = database.prepare(`
     UPDATE canonical_models SET
-      context_window = COALESCE(@contextWindow, context_window),
-      max_output = COALESCE(@maxOutput, max_output),
-      input_modalities = CASE WHEN @inputModalities <> '[]' THEN @inputModalities ELSE input_modalities END,
-      output_modalities = CASE WHEN @outputModalities <> '[]' THEN @outputModalities ELSE output_modalities END,
+      context_window = COALESCE(context_window, @contextWindow),
+      max_output = COALESCE(max_output, @maxOutput),
+      input_modalities = CASE
+        WHEN input_modalities = '[]' THEN @inputModalities
+        ELSE input_modalities
+      END,
+      output_modalities = CASE
+        WHEN output_modalities = '[]' THEN @outputModalities
+        ELSE output_modalities
+      END,
       updated_at = @now
     WHERE id = @canonicalModelId AND active = 1
   `);
@@ -2148,7 +2181,11 @@ function upsertVolcenginePricingOfferings(
 
 function upsertModelsDevOfferings(payload: unknown, now: string) {
   const providers = object(payload);
-  deactivateOfferings("models.dev", now);
+  const knownUids = new Set(
+    (getDatabase()
+      .prepare("SELECT uid FROM offerings WHERE source = 'models.dev'")
+      .all() as Array<{ uid: string }>).map((row) => row.uid),
+  );
   const write = offeringStatement();
   const match = createMatcher();
   let count = 0;
@@ -2177,8 +2214,9 @@ function upsertModelsDevOfferings(payload: unknown, now: string) {
         country === "US" && DIRECT_US_PROVIDERS.get(developer) === providerId;
       if (!isOfficialApi) continue;
 
+      const uid = stableUid("models.dev", providerId, sourceModelId);
       const row: OfferingWrite = {
-        uid: stableUid("models.dev", providerId, sourceModelId),
+        uid,
         source: "models.dev",
         sourceModelId,
         canonicalModelId: identity.id,
@@ -2225,7 +2263,10 @@ function upsertModelsDevOfferings(payload: unknown, now: string) {
         raw: JSON.stringify(model),
         now,
       };
-      write.run(row);
+      if (!knownUids.has(uid)) {
+        write.run(row);
+        knownUids.add(uid);
+      }
       count += 1;
     }
   }
@@ -2409,7 +2450,6 @@ function aliyunModelDeveloper(
 function upsertAliyunCanonicalModels(now: string) {
   const database = getDatabase();
   const catalogDevelopers = qianwenCatalogDevelopers();
-  database.prepare("UPDATE canonical_models SET active = 0 WHERE source = 'official-cn'").run();
   const write = database.prepare(`
     INSERT INTO canonical_models (
       id, name, developer, developer_country, model_type, family, description,
@@ -2425,10 +2465,9 @@ function upsertAliyunCanonicalModels(now: string) {
       @specs, 1, @now, @now
     )
     ON CONFLICT(id) DO UPDATE SET
-      developer_country = 'CN',
+      developer_country = COALESCE(canonical_models.developer_country, 'CN'),
       model_type = CASE
-        WHEN canonical_models.model_type = 'chat' AND excluded.model_type <> 'chat'
-          THEN excluded.model_type
+        WHEN canonical_models.model_type = 'unknown' THEN excluded.model_type
         ELSE canonical_models.model_type
       END,
       family = COALESCE(canonical_models.family, excluded.family),
@@ -2439,22 +2478,14 @@ function upsertAliyunCanonicalModels(now: string) {
         ELSE canonical_models.input_modalities
       END,
       output_modalities = CASE
-        WHEN canonical_models.source = 'official-cn' THEN excluded.output_modalities
+        WHEN canonical_models.output_modalities = '[]' THEN excluded.output_modalities
         ELSE canonical_models.output_modalities
       END,
-      raw_json = CASE
-        WHEN canonical_models.source = 'official-cn' THEN excluded.raw_json
-        ELSE canonical_models.raw_json
-      END,
       specs_json = CASE
-        WHEN excluded.specs_json <> '{}' THEN excluded.specs_json
+        WHEN canonical_models.specs_json = '{}' THEN excluded.specs_json
         ELSE canonical_models.specs_json
       END,
-      open_weights = CASE
-        WHEN canonical_models.source = 'official-cn' THEN excluded.open_weights
-        WHEN excluded.open_weights = 1 THEN 1
-        ELSE canonical_models.open_weights
-      END,
+      open_weights = COALESCE(canonical_models.open_weights, excluded.open_weights),
       active = 1,
       updated_at = excluded.updated_at
   `);
@@ -2599,32 +2630,22 @@ function ensureOfficialPriceCanonicalModels(
       'official-cn', @raw, 1, @now, @now
     )
     ON CONFLICT(id) DO UPDATE SET
-      name = CASE
-        WHEN excluded.name = json_extract(excluded.raw_json, '$.model_id')
-          AND canonical_models.name <> excluded.name
-          THEN canonical_models.name
-        ELSE excluded.name
-      END,
-      developer_country = 'CN',
+      developer_country = COALESCE(canonical_models.developer_country, 'CN'),
       model_type = CASE
-        WHEN canonical_models.source = 'official-cn' THEN excluded.model_type
-        WHEN canonical_models.model_type = 'chat' AND excluded.model_type <> 'chat'
-          THEN excluded.model_type
+        WHEN canonical_models.model_type = 'unknown' THEN excluded.model_type
         ELSE canonical_models.model_type
       END,
-      description = excluded.description,
+      description = COALESCE(canonical_models.description, excluded.description),
       last_updated = excluded.last_updated,
       context_window = COALESCE(excluded.context_window, canonical_models.context_window),
       input_modalities = CASE
-        WHEN excluded.input_modalities <> '[]' THEN excluded.input_modalities
+        WHEN canonical_models.input_modalities = '[]' THEN excluded.input_modalities
         ELSE canonical_models.input_modalities
       END,
       output_modalities = CASE
-        WHEN excluded.output_modalities <> '[]' THEN excluded.output_modalities
+        WHEN canonical_models.output_modalities = '[]' THEN excluded.output_modalities
         ELSE canonical_models.output_modalities
       END,
-      source = 'official-cn',
-      raw_json = excluded.raw_json,
       active = 1,
       updated_at = excluded.updated_at
   `);
@@ -2822,6 +2843,134 @@ type SyncSnapshot = {
   activePrices: Map<string, string>;
 };
 
+type ProtectedLocalModel = {
+  id: string;
+  name: string;
+  developer: string;
+  developer_country: string | null;
+  model_type: string;
+  family: string | null;
+  description: string | null;
+  release_date: string | null;
+  knowledge_cutoff: string | null;
+  last_updated: string | null;
+  context_window: number | null;
+  max_output: number | null;
+  input_modalities: string;
+  output_modalities: string;
+  reasoning: number | null;
+  tool_call: number | null;
+  structured_output: number | null;
+  attachment: number | null;
+  benchmarks_json: string;
+  weights_json: string;
+  specs_json: string;
+  source: string;
+  raw_json: string;
+};
+
+function captureProtectedLocalModels() {
+  return getDatabase()
+    .prepare(`
+      SELECT id, name, developer, developer_country, model_type, family, description,
+        release_date, knowledge_cutoff, last_updated, context_window, max_output,
+        input_modalities, output_modalities, reasoning, tool_call, structured_output,
+        attachment, benchmarks_json, weights_json, specs_json, source, raw_json
+      FROM canonical_models
+    `)
+    .all() as ProtectedLocalModel[];
+}
+
+function restoreProtectedLocalModels(models: ProtectedLocalModel[]) {
+  const restore = getDatabase().prepare(`
+    UPDATE canonical_models SET
+      name = @name,
+      developer = @developer,
+      developer_country = CASE
+        WHEN @developerCountry IS NOT NULL THEN @developerCountry
+        ELSE developer_country
+      END,
+      model_type = @modelType,
+      family = CASE WHEN @family IS NOT NULL THEN @family ELSE family END,
+      description = CASE
+        WHEN @description IS NOT NULL THEN @description
+        ELSE description
+      END,
+      release_date = CASE
+        WHEN @releaseDate IS NOT NULL THEN @releaseDate
+        ELSE release_date
+      END,
+      knowledge_cutoff = CASE
+        WHEN @knowledgeCutoff IS NOT NULL THEN @knowledgeCutoff
+        ELSE knowledge_cutoff
+      END,
+      last_updated = CASE
+        WHEN @lastUpdated IS NOT NULL THEN @lastUpdated
+        ELSE last_updated
+      END,
+      context_window = CASE
+        WHEN @contextWindow IS NOT NULL THEN @contextWindow
+        ELSE context_window
+      END,
+      max_output = CASE WHEN @maxOutput IS NOT NULL THEN @maxOutput ELSE max_output END,
+      input_modalities = CASE
+        WHEN @inputModalities <> '[]' THEN @inputModalities
+        ELSE input_modalities
+      END,
+      output_modalities = CASE
+        WHEN @outputModalities <> '[]' THEN @outputModalities
+        ELSE output_modalities
+      END,
+      reasoning = CASE WHEN @reasoning IS NOT NULL THEN @reasoning ELSE reasoning END,
+      tool_call = CASE WHEN @toolCall IS NOT NULL THEN @toolCall ELSE tool_call END,
+      structured_output = CASE
+        WHEN @structuredOutput IS NOT NULL THEN @structuredOutput
+        ELSE structured_output
+      END,
+      attachment = CASE
+        WHEN @attachment IS NOT NULL THEN @attachment
+        ELSE attachment
+      END,
+      benchmarks_json = CASE
+        WHEN @benchmarks <> '[]' THEN @benchmarks
+        ELSE benchmarks_json
+      END,
+      weights_json = CASE WHEN @weights <> '[]' THEN @weights ELSE weights_json END,
+      specs_json = CASE WHEN @specs <> '{}' THEN @specs ELSE specs_json END,
+      source = @source,
+      raw_json = @raw
+    WHERE id = @id
+  `);
+
+  for (const model of models) {
+    restore.run({
+      id: model.id,
+      name: model.name,
+      developer: model.developer,
+      developerCountry: model.developer_country,
+      modelType: model.model_type,
+      family: model.family,
+      description: model.description,
+      releaseDate: model.release_date,
+      knowledgeCutoff: model.knowledge_cutoff,
+      lastUpdated: model.last_updated,
+      contextWindow: model.context_window,
+      maxOutput: model.max_output,
+      inputModalities: model.input_modalities,
+      outputModalities: model.output_modalities,
+      reasoning: model.reasoning,
+      toolCall: model.tool_call,
+      structuredOutput: model.structured_output,
+      attachment: model.attachment,
+      benchmarks: model.benchmarks_json,
+      weights: model.weights_json,
+      specs: model.specs_json,
+      source: model.source,
+      raw: model.raw_json,
+    });
+  }
+}
+
 type PriceHistoryRow = {
   uid: string;
   canonical_model_id: string | null;
@@ -3015,6 +3164,7 @@ export async function syncCatalog(): Promise<SyncResult> {
   const database = getDatabase();
   const startedAt = new Date().toISOString();
   const before = captureSyncSnapshot();
+  const protectedLocalModels = captureProtectedLocalModels();
   recordOfferingPriceHistory(startedAt);
   const run = database
     .prepare("INSERT INTO sync_runs (started_at, status) VALUES (?, 'running')")
@@ -3129,15 +3279,19 @@ export async function syncCatalog(): Promise<SyncResult> {
           effectiveOfficialPrices.find((item) => item.providerId === "moonshot")?.prices.length ?? 0,
         official_zhipu_live:
           effectiveOfficialPrices.find((item) => item.providerId === "zhipu")?.prices.length ?? 0,
+        confirmed_official_retirements: applyConfirmedOfficialRetirements(now),
+        protected_local_models: protectedLocalModels.length,
       };
 
       applyCanonicalProductNormalization(now, new Set(before.activeModels.keys()));
+      restoreProtectedLocalModels(protectedLocalModels);
       applyOfficialOpennessClassification(officialWeightRepositories.repositories, now);
 
       deactivateOfferings("litellm", now);
       database.prepare("DELETE FROM sources WHERE id = 'litellm'").run();
 
       for (const [source, count] of Object.entries(result)) {
+        if (!(source in SOURCE_ENDPOINTS)) continue;
         const live = liveBySource.get(source as keyof typeof SOURCE_ENDPOINTS);
         const opennessError =
           source === "official_open_weights" && freshOfficialWeightRepositories.errors.length

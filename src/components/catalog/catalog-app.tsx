@@ -847,21 +847,21 @@ export function CatalogApp() {
           <div className="sync-policy-heading">
             <RefreshCw size={15} />
             <div>
-              <strong>“立即同步”会真实更新什么</strong>
-              <span>只在来源成功读取后应用差异；官网失败时保留上次成功数据，不误判下架。</span>
+              <strong>本地主库优先 · 外部来源只做增量</strong>
+              <span>Models.dev、模型市场等只新增模型或补空字段，不覆盖本地已有资料，也不能据此判定下架。</span>
             </div>
           </div>
           <div className="sync-policy-item">
             <b>01 · 新模型</b>
-            <span>保存发布日期；同步后回到第 1 页，并按发布时间从新到旧排列。</span>
+            <span>只把本地不存在的模型加入主库；保存发布日期，并按发布时间从新到旧排列。</span>
           </div>
           <div className="sync-policy-item">
-            <b>02 · 改价 / 改规格</b>
-            <span>更新官网价格、计费单位、上下文等字段，同时把上一个价格版本留在本地历史。</span>
+            <b>02 · 官网动态字段</b>
+            <span>仅厂商官网可更新价格等动态字段；旧价格继续保留在本地历史，市场数据不覆盖人工资料。</span>
           </div>
           <div className="sync-policy-item">
-            <b>03 · 下架</b>
-            <span>停止使用失效调用记录；全来源均不再提供时，模型保留在库中并标记“已下架 / 不可调用”。</span>
+            <b>03 · 厂商确认停用</b>
+            <span>只有官方停用日期或明确状态才会移出在用列表；记录仍保留，并标记“已下架 / 不可调用”。</span>
           </div>
         </section>
         <section className="metric-strip" aria-label="数据概览">

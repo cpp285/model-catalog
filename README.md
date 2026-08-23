@@ -45,6 +45,9 @@ The following rules are enforced:
 5. Vendor APIs take priority over marketplaces and routing platforms.
 6. OpenRouter and major model platforms are treated as provider offerings, not model developers.
 7. Old or rarely used retrieval models are excluded when a clearly better current replacement exists.
+8. The local catalog is the source of truth. Aggregators may insert missing models or fill empty fields, but they cannot overwrite existing local model metadata.
+9. An aggregator removing or changing a record never retires the corresponding local model.
+10. Mutable prices may be refreshed from official vendor sources. A model is retired only from an explicit official retirement status or an effective official deprecation date; historical records are preserved.
 
 ## Data sources
 
@@ -109,10 +112,12 @@ npm run build
 
 The **Sync now** button calls the same synchronization pipeline as `npm run catalog:sync`.
 
-- **New models** are inserted and appear according to their release date.
-- **Price and specification changes** update the current record and preserve price-history snapshots.
-- **Retired offerings** are deactivated instead of deleted.
-- A base model is only marked retired when no current callable offering remains.
+- **New models** missing from the local catalog are inserted and appear according to their release date.
+- **Existing local metadata** is never replaced wholesale by Models.dev, Qianwen Model Market, Volcengine Ark, or another aggregator. Those sources can only fill fields that are still empty.
+- **Models.dev records and offerings are append-only** after their first import; later upstream rewrites cannot alter the local copy.
+- **Official vendor prices** remain mutable and keep price-history snapshots when they change.
+- **Provider offerings** can be deactivated without deleting their historical records.
+- A base model is marked retired only after an explicit retirement signal or an effective deprecation date from an authoritative vendor source. Marketplace disappearance alone is insufficient.
 - **Partial vendor failures** use the most recent successful vendor snapshot so that a temporary website failure does not retire an entire model family.
 - The UI reports actual counts for new models, reactivated models, retired models, retired offerings, price changes, and specification changes.
 
