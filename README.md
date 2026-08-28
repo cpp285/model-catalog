@@ -82,8 +82,6 @@ npm install
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
-
 The catalog remains searchable offline after data has been synchronized. A network connection is only required when refreshing sources or calling model APIs from the workbench.
 
 ## Commands
